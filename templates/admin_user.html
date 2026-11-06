@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Admin · Daily Tracker{% endblock %}
+{% block heading %}Administration{% endblock %}
+{% block content %}
+<div class="intro-row"><div><p class="muted">Manage access, reporting structure and monthly performance expectations.</p></div><span class="tag">ADMIN CONTROL</span></div>
+<div class="grid two">
+  <div class="panel">
+    <div class="panel-head"><div><span class="eyebrow">ACCESS CONTROL</span><h2>Create user</h2></div></div>
+    <form method="post" class="form-grid">
+      <label>Full name<input name="full_name" maxlength="100" required></label>
+      <label>Username<input name="username" maxlength="50" required></label>
+      <label>Temporary password<input type="password" name="password" minlength="8" required></label>
+      <label>Role<select name="role" id="role" required><option value="agent">Agent</option><option value="tl">Team Lead</option><option value="admin">Admin</option></select></label>
+      <label id="tl-field" class="span-two">Assign Team Lead<select name="tl_id"><option value="">Choose Team Lead</option>{% for tl in tls %}<option value="{{ tl.id }}">{{ tl.full_name }}</option>{% endfor %}</select></label>
+      <div class="span-two"><button class="button">Create account</button></div>
+    </form>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><div><span class="eyebrow">MONTHLY EXPECTATIONS</span><h2>Set KPI targets</h2></div></div>
+    <form method="post" action="{{ url_for('admin_targets') }}" class="form-grid">
+      <label>Month<input type="month" name="month" value="{{ month }}" required></label>
+      <label>Average calls / day<input type="number" name="avg_calls" min="0" step="1" value="{{ target.avg_calls }}" required></label>
+      <label>Approval target (%)<input type="number" name="approval_pct" min="0" max="100" step="0.01" value="{{ target.approval_pct }}" required></label>
+      <label>Error ceiling (%)<input type="number" name="error_pct" min="0" max="100" step="0.01" value="{{ target.error_pct }}" required></label>
+      <div class="span-two"><button class="button button-secondary">Save targets</button></div>
+    </form>
+    <p class="hint">Default targets: 170 average calls, 45% approvals, maximum 0.5% errors.</p>
+  </div>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">USER DIRECTORY</span><h2>Accounts <span class="count">{{ users|length }}</span></h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Team Lead</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  {% for u in users %}<tr><td><strong>{{ u.full_name }}</strong></td><td>{{ u.username }}</td><td><span class="role-pill {{ u.role }}">{{ u.role|upper }}</span></td><td>{{ u.team_lead.full_name if u.role == 'agent' and u.team_lead else '—' }}</td><td><span class="status {{ 'active' if u.active else 'inactive' }}">{{ 'Active' if u.active else 'Inactive' }}</span></td><td>{% if u.id != current_user.id %}<form method="post" action="{{ url_for('toggle_user', user_id=u.id) }}"><button class="text-button" data-confirm="Change this user's active status?">{{ 'Deactivate' if u.active else 'Activate' }}</button></form>{% else %}You{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+<script>
+const roleSelect=document.getElementById('role'), tlField=document.getElementById('tl-field');
+function updateTL(){tlField.style.display=roleSelect.value==='agent'?'block':'none';}
+roleSelect.addEventListener('change',updateTL);updateTL();
+</script>
+{% endblock %}
