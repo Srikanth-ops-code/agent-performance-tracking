@@ -529,14 +529,24 @@ def inject_now_label():
 # ------------------------------- STARTUP -----------------------------------
 def initialize_database():
     db.create_all()
+
     if not User.query.filter_by(username="admin").first():
-        admin = User(username="admin", full_name="Administrator", role="admin")
-        admin.set_password(os.environ.get("INITIAL_ADMIN_PASSWORD", "admin123"))
+        admin = User(
+            username="admin",
+            full_name="Administrator",
+            role="admin"
+        )
+        admin.set_password(
+            os.environ.get("INITIAL_ADMIN_PASSWORD", "admin123")
+        )
         db.session.add(admin)
         db.session.commit()
 
 
+# Initialize database for both local and Render deployments
+with app.app_context():
+    initialize_database()
+
+
 if __name__ == "__main__":
-    with app.app_context():
-        initialize_database()
     app.run(host="127.0.0.1", port=5000, debug=True)
