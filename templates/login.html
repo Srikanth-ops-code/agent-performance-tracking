@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Daily Tracker{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="brand-mark large">DP</div>
+    <span class="eyebrow">OPERATIONS PERFORMANCE SUITE</span>
+    <h1>Welcome back.</h1><p class="muted">Sign in to access your performance workspace.</p>
+    <form method="post" class="stack-form">
+      <label>Username<input name="username" autocomplete="username" required autofocus></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="button full">Sign in <span>→</span></button>
+    </form>
+    <div class="login-note">Initial administrator: <b>admin</b> / <b>admin123</b><br>Change this password immediately after first login.</div>
+  </div>
+</div>
+{% endblock %}
