@@ -368,7 +368,7 @@ def delete_roster(roster_id):
 def agent_dashboard():
     year, month = parse_month()
     k = agent_kpis(current_user.id, year, month)
-    return render_template("dashboard.html", k=k, y=year, m=month,
+    return render_template("agent_dashboard.html", k=k, y=year, m=month,
                            month_name=cal.month_name[month])
 
 
@@ -386,7 +386,7 @@ def agent_calendar():
     entry_data = {str(day): {"total_calls": e.total_calls, "approvals": e.approvals, "errors": e.errors}
                   for day, e in entries.items()}
     weeks = cal.Calendar(firstweekday=0).monthdayscalendar(year, month)
-    return render_template("calander.html", y=year, m=month, weeks=weeks, entries=entries,
+    return render_template("calendar.html", y=year, m=month, weeks=weeks, entries=entries,
                            entry_data=entry_data, offs=offs, month_name=cal.month_name[month], today=date.today())
 
 
@@ -461,7 +461,7 @@ def tl_team():
         "agent_count": len(agents),
         "target": get_target(f"{year}-{month:02d}")
     }
-    return render_template("TL_dashboard.html", mode="team", team=team, rows=rows,
+    return render_template("tl_dashboard.html", mode="team", team=team, rows=rows,
                            chart=chart, agents=agents, y=year, m=month,
                            month_name=cal.month_name[month])
 
