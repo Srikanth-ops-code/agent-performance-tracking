@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}My dashboard · Daily Tracker{% endblock %}
+{% block heading %}My Performance Overview{% endblock %}
+{% block content %}
+<div class="intro-row">
+  <div>
+    <p class="muted">
+      Monthly performance summary for {{ month_name }} {{ y }}.
+    </p>
+  </div>
+
+  <form class="month-filter"><input type="number" name="y" value="{{ y }}" min="2000" max="2100"><select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ month_name if n==m else ['','January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select><button class="button button-secondary">View</button></form></div>
+{% if k.reminder %}<div class="reminder"><div class="reminder-icon">!</div><div><strong>Performance check-in</strong>{% for msg in k.reminder %}<p>{{ msg }}</p>{% endfor %}</div></div>{% endif %}
+<div class="kpi-grid">
+  <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong><small>Monthly volume</small></div>
+  <div class="kpi-card"><span>Average calls / day</span><strong>{{ k.avg_calls }}</strong><small>Target {{ k.target.avg_calls|int }}</small></div>
+  <div class="kpi-card"><span>Approval rate</span><strong>{{ k.appr_pct }}<i>%</i></strong><small>Target {{ k.target.approval_pct }}%</small></div>
+  <div class="kpi-card"><span>Error rate</span><strong>{{ k.err_pct }}<i>%</i></strong><small>Ceiling {{ k.target.error_pct }}%</small></div>
+</div>
+<div class="grid two">
+  <div class="panel"><div class="panel-head"><div><span class="eyebrow">DAILY TREND</span><h2>Calls completed</h2></div><span class="tag">{{ k.days_done }} entries</span></div><canvas id="callsChart" height="150"></canvas></div>
+  <div class="panel"><div class="panel-head"><div><span class="eyebrow">QUALITY TREND</span><h2>Approval & error rate</h2></div></div><canvas id="qualityChart" height="150"></canvas></div>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">RECENT ACTIVITY</span><h2>Daily entries</h2></div><a class="button button-secondary" href="{{ url_for('agent_calendar', y=y, m=m) }}">Open calendar →</a></div>
+  <div class="table-wrap"><table><thead><tr><th>Date</th><th>Calls</th><th>Approvals</th><th>Errors</th><th>Approval %</th><th>Error %</th></tr></thead><tbody>
+  {% for e in k.entries|reverse %}<tr><td>{{ e.entry_date.strftime('%d %b %Y') }}</td><td>{{ e.total_calls }}</td><td>{{ e.approvals }}</td><td>{{ e.errors }}</td><td>{{ e.approval_pct }}%</td><td>{{ e.error_pct }}%</td></tr>{% else %}<tr><td colspan="6" class="empty">No entries for this month. Add your first daily entry from the calendar.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const labels={{ k.chart.labels|tojson }}, calls={{ k.chart.calls|tojson }}, approvals={{ k.chart.approval_pct|tojson }}, errors={{ k.chart.error_pct|tojson }};
+new Chart(document.getElementById('callsChart'),{type:'line',data:{labels,datasets:[{label:'Calls',data:calls,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,.12)',fill:true,tension:.35}]},options:{plugins:{legend:{labels:{color:'#a9b8d0'}}},scales:{x:{ticks:{color:'#8292ac'},grid:{color:'#24344e'}},y:{ticks:{color:'#8292ac'},grid:{color:'#24344e'},beginAtZero:true}}}});
+new Chart(document.getElementById('qualityChart'),{type:'line',data:{labels,datasets:[{label:'Approval %',data:approvals,borderColor:'#42d6a4',tension:.35},{label:'Error %',data:errors,borderColor:'#ff7d8a',tension:.35}]},options:{plugins:{legend:{labels:{color:'#a9b8d0'}}},scales:{x:{ticks:{color:'#8292ac'},grid:{color:'#24344e'}},y:{ticks:{color:'#8292ac'},grid:{color:'#24344e'},beginAtZero:true}}}});
+</script>
+{% endblock %}
