@@ -5,7 +5,7 @@
 <p class="muted">Add an agent's scheduled week-off dates. These dates are excluded from the monthly catch-up calculation.</p>
 <div class="panel narrow">
   <div class="panel-head"><div><span class="eyebrow">ROSTER MANAGEMENT</span><h2>Add week-off</h2></div></div>
-  <form method="post" class="Aorm-grid">
+  <form method="post" class="form-grid">
     <label class="span-two">Agent<select name="agent_id" required><option value="">Select agent</option>{% for a in agents %}<option value="{{ a.id }}">{{ a.full_name }}</option>{% endfor %}</select></label>
     <label class="span-two">Week-off date<input type="date" name="off_date" required></label>
     <div class="span-two"><button class="button">Save week-off</button></div>
