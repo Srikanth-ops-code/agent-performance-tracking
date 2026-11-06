@@ -83,7 +83,11 @@ A local Flask + SQLite performance tracking app based on the uploaded 20-page sp
 
 ## Database
 
-SQLite database file `tracker.db` is created automatically in the project folder on first run. Back it up regularly. Do not delete it unless you intend to reset all application data.
+- Local development uses SQLite. The `tracker.db` file is created automatically in the project folder.
+- When the `DATABASE_URL` environment variable is configured, the app uses PostgreSQL instead.
+- On Render, create a PostgreSQL database and add its **Internal Database URL** to the web service as the `DATABASE_URL` environment variable. The app accepts Render's `postgres://` / `postgresql://` URL formats and uses the Psycopg 3 driver.
+- Existing SQLite records are **not copied automatically** when you switch to PostgreSQL. Export or migrate your existing users, daily entries, entry history, roster and targets before switching the live service. Keep a backup of `tracker.db`.
+- Database tables are created automatically at application startup. This creates missing tables; it does not copy records from SQLite or alter existing table structures.
 
 ## Notes and boundaries
 
