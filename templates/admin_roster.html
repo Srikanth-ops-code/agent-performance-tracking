@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Week-off roster · Daily Tracker{% endblock %}
+{% block heading %}Week-off roster{% endblock %}
+{% block content %}
+<p class="muted">Add an agent's scheduled week-off dates. These dates are excluded from the monthly catch-up calculation.</p>
+<div class="panel narrow">
+  <div class="panel-head"><div><span class="eyebrow">ROSTER MANAGEMENT</span><h2>Add week-off</h2></div></div>
+  <form method="post" class="Aorm-grid">
+    <label class="span-two">Agent<select name="agent_id" required><option value="">Select agent</option>{% for a in agents %}<option value="{{ a.id }}">{{ a.full_name }}</option>{% endfor %}</select></label>
+    <label class="span-two">Week-off date<input type="date" name="off_date" required></label>
+    <div class="span-two"><button class="button">Save week-off</button></div>
+  </form>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">SCHEDULE</span><h2>Recent week-offs</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Date</th><th>Action</th></tr></thead><tbody>
+  {% for r in roster %}<tr><td>{{ r.agent.full_name }}</td><td>{{ r.off_date.strftime('%d %b %Y') }}</td><td><form method="post" action="{{ url_for('delete_roster', roster_id=r.id) }}"><button class="text-button" data-confirm="Remove this week-off?">Remove</button></form></td></tr>{% else %}<tr><td colspan="3" class="empty">No week-off dates added yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endblock %}
