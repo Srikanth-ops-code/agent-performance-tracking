@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Team performance · Daily Tracker{% endblock %}
+{% block heading %}{% if mode == 'team' %}Team performance{% else %}Agent performance{% endif %}{% endblock %}
+{% block content %}
+<div class="intro-row"><p class="muted">{% if mode == 'team' %}Monitor your assigned agents and team-level performance for {{ month_name }} {{ y }}.{% else %}Monthly performance details for {{ agent.full_name }}.{% endif %}</p><div class="actions"><form class="month-filter"><input type="number" name="y" value="{{ y }}" min="2000" max="2100"><select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ ['','January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select><button class="button button-secondary">View</button></form><a class="button button-secondary" href="{{ url_for('export_team', y=y, m=m) }}">⇩ Excel</a></div></div>
+{% if mode == 'team' %}
+<div class="kpi-grid">
+  <div class="kpi-card"><span>Team calls</span><strong>{{ "{:,}".format(team.total_calls) }}</strong><small>Monthly total</small></div>
+  <div class="kpi-card"><span>Active agents</span><strong>{{ team.agent_count }}</strong><small>Assigned to you</small></div>
+  <div class="kpi-card"><span>Approval rate</span><strong>{{ team.appr_pct }}<i>%</i></strong><small>Team weighted rate</small></div>
+  <div class="kpi-card"><span>Error rate</span><strong>{{ team.err_pct }}<i>%</i></strong><small>Team weighted rate</small></div>
+</div>
+<div class="grid two">
+  <div class="panel"><div class="panel-head"><div><span class="eyebrow">TEAM TREND</span><h2>Daily calls</h2></div></div><canvas id="teamTrend" height="155"></canvas></div>
+  <div class="panel"><div class="panel-head"><div><span class="eyebrow">VOLUME DISTRIBUTION</span><h2>Calls by agent</h2></div></div><canvas id="agentChart" height="155"></canvas></div>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">TEAM ROSTER</span><h2>Agent scorecard</h2></div><span class="tag">{{ month_name }} {{ y }}</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Days entered</th><th>Total calls</th><th>Avg calls</th><th>Approval %</th><th>Error %</th><th>Details</th></tr></thead><tbody>
+  {% for row in rows %}<tr><td><strong>{{ row.agent.full_name }}</strong></td><td>{{ row.k.days_done }}</td><td>{{ "{:,}".format(row.k.total_calls) }}</td><td>{{ row.k.avg_calls }}</td><td>{{ row.k.appr_pct }}%</td><td>{{ row.k.err_pct }}%</td><td><a class="text-button" href="{{ url_for('tl_agent', agent_id=row.agent.id, y=y, m=m) }}">View →</a></td></tr>{% else %}<tr><td colspan="7" class="empty">No active agents are assigned to your account. Ask an administrator to assign agents.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% else %}
+<div class="intro-row"><a class="text-button" href="{{ url_for('tl_team', y=y, m=m) }}">← Back to team</a><span class="tag">AGENT DETAIL</span></div>
+<div class="kpi-grid">
+  <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong></div>
+  <div class="kpi-card"><span>Average calls / day</span><strong>{{ k.avg_calls }}</strong><small>Target {{ k.target.avg_calls|int }}</small></div>
+  <div class="kpi-card"><span>Approval rate</span><strong>{{ k.appr_pct }}<i>%</i></strong><small>Target {{ k.target.approval_pct }}%</small></div>
+  <div class="kpi-card"><span>Error rate</span><strong>{{ k.err_pct }}<i>%</i></strong><small>Ceiling {{ k.target.error_pct }}%</small></div>
+</div>
+<div class="grid two">
+  <div class="panel"><div class="panel-head"><div><span class="eyebrow">DAILY TREND</span><h2>Calls completed</h2></div></div><canvas id="agentTrend" height="155"></canvas></div>
+  <div class="panel"><div class="panel-head"><div><span class="eyebrow">QUALITY TREND</span><h2>Approval & error rate</h2></div></div><canvas id="agentQuality" height="155"></canvas></div>
+</div>
+<div class="panel"><div class="panel-head"><div><span class="eyebrow">AUDIT TRAIL</span><h2>Entry change history</h2></div></div><div id="history" class="history-list">Loading entry history…</div></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const chart={{ chart|tojson }};
+const baseOptions={plugins:{legend:{labels:{color:'#a9b8d0'}}},scales:{x:{ticks:{color:'#8292ac'},grid:{color:'#24344e'}},y:{ticks:{color:'#8292ac'},grid:{color:'#24344e'},beginAtZero:true}}};
+{% if mode == 'team' %}
+new Chart(document.getElementById('teamTrend'),{type:'line',data:{labels:chart.labels,datasets:[{label:'Calls',data:chart.calls,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,.12)',fill:true,tension:.35}]},options:baseOptions});
+new Chart(document.getElementById('agentChart'),{type:'bar',data:{labels:chart.agent_names,datasets:[{label:'Calls',data:chart.agent_calls,backgroundColor:'#42b8d5',borderRadius:6}]},options:baseOptions});
+{% else %}
+new Chart(document.getElementById('agentTrend'),{type:'line',data:{labels:chart.labels,datasets:[{label:'Calls',data:chart.calls,borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,.12)',fill:true,tension:.35}]},options:baseOptions});
+new Chart(document.getElementById('agentQuality'),{type:'line',data:{labels:chart.labels,datasets:[{label:'Approval %',data:chart.approval_pct,borderColor:'#42d6a4',tension:.35},{label:'Error %',data:chart.error_pct,borderColor:'#ff7d8a',tension:.35}]},options:baseOptions});
+fetch('{{ url_for("entry_history", agent_id=agent.id) }}').then(r=>r.json()).then(items=>{
+ const el=document.getElementById('history');
+ if(!items.length){el.textContent='No changes recorded yet.';return;}
+ el.innerHTML=items.map(x=>`<div class="history-row"><div><strong>${x.by}</strong><small>${x.when}</small></div><div><small>Before</small><b>${x.old}</b></div><div><small>After</small><b>${x.new}</b></div></div>`).join('');
+}).catch(()=>document.getElementById('history').textContent='Could not load history.');
+{% endif %}
+</script>
+{% endblock %}
