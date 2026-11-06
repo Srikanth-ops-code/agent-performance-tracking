@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Daily Performance Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div class="app-shell">
+  {% if current_user.is_authenticated %}
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">DP</span><div><strong>Daily Tracker</strong><small>Performance workspace</small></div></div>
+    <div class="profile"><div class="avatar">{{ current_user.full_name[:1]|upper }}</div><div><strong>{{ current_user.full_name }}</strong><small>{{ current_user.role|upper }}</small></div></div>
+    <nav>
+      {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('admin_users') }}">◫ &nbsp; User management</a>
+        <a href="{{ url_for('admin_roster') }}">▦ &nbsp; Week-off roster</a>
+      {% elif current_user.role == 'tl' %}
+        <a href="{{ url_for('tl_team') }}">▥ &nbsp; Team overview</a>
+        <a href="{{ url_for('export_team') }}">⇩ &nbsp; Export Excel</a>
+      {% else %}
+        <a href="{{ url_for('agent_dashboard') }}">▥ &nbsp; My dashboard</a>
+        <a href="{{ url_for('agent_calendar') }}">▦ &nbsp; Daily calendar</a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-bottom">
+      <form method="post" action="{{ url_for('change_password') }}" class="password-form">
+        <label>Change password</label><input type="password" name="new_password" minlength="8" placeholder="New password" required>
+        <button class="button button-ghost full">Update password</button>
+      </form>
+      <form method="post" action="{{ url_for('logout') }}"><button class="button button-ghost full">↪ Sign out</button></form>
+    </div>
+  </aside>
+  {% endif %}
+  <main class="main-area {% if not current_user.is_authenticated %}main-login{% endif %}">
+    {% if current_user.is_authenticated %}
+    <header class="topbar">
+  <div>
+    <span class="eyebrow">OPERATIONS / PERFORMANCE</span>
+    <h1>{% block heading %}Workspace{% endblock %}</h1>
+  </div>
+
+  <div class="topbar-actions">
+    {% if current_user.role == 'agent' %}
+      <details class="calendar-dropdown">
+        <summary class="button button-secondary">
+          ▦ Calendar
+        </summary>
+        <div class="calendar-dropdown-menu">
+          <a href="{{ url_for('agent_calendar') }}">Open Daily Calendar</a>
+          <a href="{{ url_for('agent_calendar') }}#entry-form">Add Daily Entry</a>
+        </div>
+      </details>
+
+      <a href="{{ url_for('agent_calendar') }}"
+         class="button">
+        + Add Entry
+      </a>
+    {% endif %}
+
+    <div class="top-date">{{ now_label }}</div>
+  </div>
+</header>
+    {% endif %}
+    <section class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </section>
+  </main>
+</div>
+<script>
+document.querySelectorAll('[data-confirm]').forEach(el => el.addEventListener('click', e => {
+  if (!confirm(el.dataset.confirm)) e.preventDefault();
+}));
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
