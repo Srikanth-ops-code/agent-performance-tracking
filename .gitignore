@@ -1,7 +1,27 @@
+# Python cache
 __pycache__/
 *.py[cod]
-.venv/
+*$py.class
+
+# Virtual environments
 venv/
-instance/
-tracker.db
+.venv/
+env/
+
+# Environment variables and secrets
 .env
+.env.*
+
+# IDE settings
+.vscode/
+
+# Logs
+*.log
+
+# Local database (if migrating to PostgreSQL)
+*.db
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
