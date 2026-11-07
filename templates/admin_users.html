@@ -28,11 +28,47 @@
   </div>
 </div>
 <div class="panel">
-  <div class="panel-head"><div><span class="eyebrow">USER DIRECTORY</span><h2>Accounts <span class="count">{{ users|length }}</span></h2></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Team Lead</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  {% for u in users %}<tr><td><strong>{{ u.full_name }}</strong></td><td>{{ u.username }}</td><td><span class="role-pill {{ u.role }}">{{ u.role|upper }}</span></td><td>{{ u.team_lead.full_name if u.role == 'agent' and u.team_lead else '—' }}</td><td><span class="status {{ 'active' if u.active else 'inactive' }}">{{ 'Active' if u.active else 'Inactive' }}</span></td><td>{% if u.id != current_user.id %}<form method="post" action="{{ url_for('toggle_user', user_id=u.id) }}"><button class="text-button" data-confirm="Change this user's active status?">{{ 'Deactivate' if u.active else 'Activate' }}</button></form>{% else %}You{% endif %}</td></tr>{% endfor %}
+  <div class="panel-head"><div><span class="eyebrow">USER DIRECTORY & ADMIN CONTROL</span><h2>Accounts <span class="count">{{ users|length }}</span></h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Team Lead</th><th>Status</th><th>Account controls</th></tr></thead><tbody>
+  {% for u in users %}<tr>
+    <td><strong>{{ u.full_name }}</strong></td><td>{{ u.username }}</td>
+    <td><span class="role-pill {{ u.role }}">{{ u.role|upper }}</span></td>
+    <td>{{ u.team_lead.full_name if u.role == 'agent' and u.team_lead else '—' }}</td>
+    <td><span class="status {{ 'active' if u.active else 'inactive' }}">{{ 'Active' if u.active else 'Inactive' }}</span></td>
+    <td>
+      {% if u.id != current_user.id %}
+      <details class="admin-account-tools"><summary class="text-button">Edit / Reset password</summary>
+        <form method="post" action="{{ url_for('update_user', user_id=u.id) }}" class="admin-edit-form">
+          <label>Full name<input name="full_name" value="{{ u.full_name }}" maxlength="100" required></label>
+          <label>Username<input name="username" value="{{ u.username }}" maxlength="50" required></label>
+          <label>Role<select name="role" class="edit-role" required>
+            <option value="agent" {{ 'selected' if u.role == 'agent' else '' }}>Agent</option>
+            <option value="tl" {{ 'selected' if u.role == 'tl' else '' }}>Team Lead</option>
+            <option value="admin" {{ 'selected' if u.role == 'admin' else '' }}>Admin</option>
+          </select></label>
+          <label class="edit-tl">Team Lead<select name="tl_id"><option value="">Select TL</option>{% for tl in tls %}<option value="{{ tl.id }}" {{ 'selected' if u.tl_id == tl.id else '' }}>{{ tl.full_name }}</option>{% endfor %}</select></label>
+          <button class="button button-secondary">Save account details</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_reset_password', user_id=u.id) }}" class="admin-edit-form">
+          <label>New password<input type="password" name="new_password" minlength="8" autocomplete="new-password" required placeholder="At least 8 characters"></label>
+          <button class="button">Reset password</button>
+        </form>
+        <form method="post" action="{{ url_for('toggle_user', user_id=u.id) }}">
+          <button class="text-button" data-confirm="Change this user's active status?">{{ 'Deactivate' if u.active else 'Activate' }} account</button>
+        </form>
+      </details>
+      {% else %}<span class="muted">Current admin</span>{% endif %}
+    </td>
+  </tr>{% endfor %}
   </tbody></table></div>
 </div>
+<script>
+document.querySelectorAll('.admin-account-tools').forEach(details => {
+ const role=details.querySelector('.edit-role'), tl=details.querySelector('.edit-tl');
+ function sync(){tl.style.display=role.value==='agent'?'block':'none';}
+ role.addEventListener('change',sync);sync();
+});
+</script>
 <script>
 const roleSelect=document.getElementById('role'), tlField=document.getElementById('tl-field');
 function updateTL(){tlField.style.display=roleSelect.value==='agent'?'block':'none';}
