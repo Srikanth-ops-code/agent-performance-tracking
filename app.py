@@ -471,18 +471,29 @@ def agent_dashboard():
 def agent_roster():
     if request.method == "POST":
         try:
-            off_date = datetime.strptime(request.form["off_date"], "%Y-%m-%d").date()
-            if off_date < date.today():
-                raise ValueError
-            existing = Roster.query.filter_by(agent_id=current_user.id, off_date=off_date).first()
-            if not existing:
-                db.session.add(Roster(agent_id=current_user.id, off_date=off_date))
-                db.session.commit()
-            flash("Your week-off date has been saved.", "success")
-        except (KeyError, ValueError):
-            db.session.rollback()
-            flash("Choose a valid date from today onward.", "danger")
-        return redirect(url_for("agent_roster"))
+           off_date = datetime.strptime(
+    request.form["off_date"], "%Y-%m-%d"
+).date()
+
+existing = Roster.query.filter_by(
+    agent_id=current_user.id,
+    off_date=off_date
+).first()
+
+if not existing:
+    db.session.add(Roster(
+        agent_id=current_user.id,
+        off_date=off_date
+    ))
+    db.session.commit()
+
+flash("Your week-off date has been saved.", "success")
+
+except (KeyError, ValueError):
+    db.session.rollback()
+    flash("Choose a valid date.", "danger")
+
+return redirect(url_for("agent_roster"))
 
     roster = Roster.query.filter_by(agent_id=current_user.id).order_by(Roster.off_date.asc()).all()
     return render_template("agent_roster.html", roster=roster, today=date.today())
