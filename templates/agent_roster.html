@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}My week-offs · Daily Tracker{% endblock %}
+{% block heading %}My week-off schedule{% endblock %}
+{% block content %}
+<div class="intro-row">
+  <p class="muted">Manage your own scheduled week-off dates. Saved dates are excluded from your working-day average KPI calculation and shown on your calendar.</p>
+  <span class="tag">AGENT SELF-SERVICE</span>
+</div>
+<div class="panel narrow">
+  <div class="panel-head"><div><span class="eyebrow">MY ROSTER</span><h2>Add a week-off date</h2></div></div>
+  <form method="post" class="form-grid">
+    <label class="span-two">Week-off date<input type="date" name="off_date" min="{{ today.isoformat() }}" required></label>
+    <div class="span-two"><button class="button">Save week-off</button></div>
+  </form>
+  <p class="hint">Only dates from today onward can be added. Contact your Team Lead if a past roster date needs correction.</p>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">UPCOMING SCHEDULE</span><h2>My week-off dates <span class="count">{{ roster|length }}</span></h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Date</th><th>Day</th><th>Action</th></tr></thead><tbody>
+  {% for r in roster %}<tr>
+    <td><strong>{{ r.off_date.strftime('%d %b %Y') }}</strong></td>
+    <td>{{ r.off_date.strftime('%A') }}</td>
+    <td><form method="post" action="{{ url_for('agent_delete_roster', roster_id=r.id) }}"><button class="text-button" data-confirm="Remove this week-off date?">Remove</button></form></td>
+  </tr>{% else %}<tr><td colspan="3" class="empty">You have not added any week-off dates yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endblock %}
