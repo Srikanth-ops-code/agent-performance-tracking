@@ -471,12 +471,6 @@ def agent_dashboard():
 def agent_roster():
     if request.method == "POST":
         try:
-          @app.route("/agent/roster", methods=["GET", "POST"])
-@login_required
-@role_required("agent")
-def agent_roster():
-    if request.method == "POST":
-        try:
             off_date = datetime.strptime(
                 request.form["off_date"], "%Y-%m-%d"
             ).date()
@@ -512,8 +506,6 @@ def agent_roster():
         roster=roster,
         today=date.today()
     )
-    roster = Roster.query.filter_by(agent_id=current_user.id).order_by(Roster.off_date.asc()).all()
-    return render_template("agent_roster.html", roster=roster, today=date.today())
 
 
 @app.route("/agent/roster/<int:roster_id>/delete", methods=["POST"])
