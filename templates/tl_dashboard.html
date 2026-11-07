@@ -2,10 +2,39 @@
 {% block title %}Team performance · Daily Tracker{% endblock %}
 {% block heading %}{% if mode == 'team' %}Team performance{% else %}Agent performance{% endif %}{% endblock %}
 {% block content %}
-<div class="intro-row"><p class="muted">{% if mode == 'team' %}Monitor your assigned agents and team-level performance for {{ month_name }} {{ y }}.{% else %}Monthly performance details for {{ agent.full_name }}.{% endif %}</p><div class="actions"><form class="month-filter"><input type="number" name="y" value="{{ y }}" min="2000" max="2100"><select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ ['','January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select><button class="button button-secondary">View</button></form><a class="button button-secondary" href="{{ url_for('export_team', y=y, m=m) }}">⇩ Excel</a></div></div>
+<div class="intro-row">
+  <p class="muted">{% if mode == 'team' %}Team performance: {{ start.strftime('%d %b %Y') }} – {{ end.strftime('%d %b %Y') }}.{% else %}{{ agent.full_name }}: {{ start.strftime('%d %b %Y') }} – {{ end.strftime('%d %b %Y') }}.{% endif %}</p>
+  <div class="actions">
+    <form class="period-filter" method="get">
+      <label>Period<select name="period" id="tlPeriod">
+        <option value="day" {{ 'selected' if period=='day' else '' }}>Day</option>
+        <option value="week" {{ 'selected' if period=='week' else '' }}>Week</option>
+        <option value="month" {{ 'selected' if period=='month' else '' }}>Month</option>
+        <option value="custom" {{ 'selected' if period=='custom' else '' }}>Custom</option>
+      </select></label>
+      <label class="tl-date">Date<input type="date" name="date" value="{{ start.isoformat() }}"></label>
+      <label class="tl-month">Year<input type="number" name="y" value="{{ start.year }}" min="2000" max="2100"></label>
+      <label class="tl-month">Month<select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ ['', 'January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select></label>
+      <label class="tl-custom">From<input type="date" name="start" value="{{ start.isoformat() }}"></label>
+      <label class="tl-custom">To<input type="date" name="end" value="{{ end.isoformat() }}"></label>
+      <button class="button button-secondary">Apply</button>
+    </form>
+    {% if mode == 'team' %}<a class="button button-secondary" href="{{ url_for('export_team', y=y, m=m) }}">⇩ Excel</a>{% endif %}
+  </div>
+</div>
+<script>
+(function(){const p=document.getElementById('tlPeriod');function sync(){
+ document.querySelectorAll('.tl-date').forEach(x=>x.hidden=!['day','week'].includes(p.value));
+ document.querySelectorAll('.tl-month').forEach(x=>x.hidden=p.value!=='month');
+ document.querySelectorAll('.tl-custom').forEach(x=>x.hidden=p.value!=='custom');
+}p.addEventListener('change',sync);sync();})();
+</script>
 {% if mode == 'team' %}
 <div class="kpi-grid">
-  <div class="kpi-card"><span>Team calls</span><strong>{{ "{:,}".format(team.total_calls) }}</strong><small>Monthly total</small></div>
+  <div class="kpi-card"><span>Team calls</span><strong>{{ "{:,}".format(team.total_calls) }}</strong><small>Selected-period total</small></div>
+  <div class="kpi-card"><span>Average calls / working day</span><strong>{{ team.avg_calls }}</strong><small>{{ team.working_days }} agent working days</small></div>
+  <div class="kpi-card"><span>Total approvals</span><strong>{{ "{:,}".format(team.total_approvals) }}</strong><small>Selected-period total</small></div>
+  <div class="kpi-card"><span>Average approvals / working day</span><strong>{{ team.avg_approvals }}</strong><small>{{ team.working_days }} agent working days</small></div>
   <div class="kpi-card"><span>Active agents</span><strong>{{ team.agent_count }}</strong><small>Assigned to you</small></div>
   <div class="kpi-card"><span>Approval rate</span><strong>{{ team.appr_pct }}<i>%</i></strong><small>Team weighted rate</small></div>
   <div class="kpi-card"><span>Error rate</span><strong>{{ team.err_pct }}<i>%</i></strong><small>Team weighted rate</small></div>
@@ -16,21 +45,33 @@
 </div>
 <div class="panel">
   <div class="panel-head"><div><span class="eyebrow">TEAM ROSTER</span><h2>Agent scorecard</h2></div><span class="tag">{{ month_name }} {{ y }}</span></div>
-  <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Days entered</th><th>Total calls</th><th>Avg calls</th><th>Approval %</th><th>Error %</th><th>Details</th></tr></thead><tbody>
-  {% for row in rows %}<tr><td><strong>{{ row.agent.full_name }}</strong></td><td>{{ row.k.days_done }}</td><td>{{ "{:,}".format(row.k.total_calls) }}</td><td>{{ row.k.avg_calls }}</td><td>{{ row.k.appr_pct }}%</td><td>{{ row.k.err_pct }}%</td><td><a class="text-button" href="{{ url_for('tl_agent', agent_id=row.agent.id, y=y, m=m) }}">View →</a></td></tr>{% else %}<tr><td colspan="7" class="empty">No active agents are assigned to your account. Ask an administrator to assign agents.</td></tr>{% endfor %}
+  <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Days entered</th><th>Total calls</th><th>Avg calls</th><th>Avg approvals</th><th>Approval %</th><th>Error %</th><th>Details</th></tr></thead><tbody>
+  {% for row in rows %}<tr><td><strong>{{ row.agent.full_name }}</strong></td><td>{{ row.k.days_done }}</td><td>{{ "{:,}".format(row.k.total_calls) }}</td><td>{{ row.k.avg_calls }}</td><td>{{ row.k.avg_approvals }}</td><td>{{ row.k.appr_pct }}%</td><td>{{ row.k.err_pct }}%</td><td><a class="text-button" href="{{ url_for('tl_agent', agent_id=row.agent.id, y=y, m=m) }}">View →</a></td></tr>{% else %}<tr><td colspan="8" class="empty">No active agents are assigned to your account. Ask an administrator to assign agents.</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
 {% else %}
 <div class="intro-row"><a class="text-button" href="{{ url_for('tl_team', y=y, m=m) }}">← Back to team</a><span class="tag">AGENT DETAIL</span></div>
 <div class="kpi-grid">
   <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong></div>
-  <div class="kpi-card"><span>Average calls / day</span><strong>{{ k.avg_calls }}</strong><small>Target {{ k.target.avg_calls|int }}</small></div>
+  <div class="kpi-card"><span>Average calls / working day</span><strong>{{ k.avg_calls }}</strong><small>{{ k.working_days }} working days</small></div>
+  <div class="kpi-card"><span>Average approvals / working day</span><strong>{{ k.avg_approvals }}</strong><small>Selected-period average</small></div>
   <div class="kpi-card"><span>Approval rate</span><strong>{{ k.appr_pct }}<i>%</i></strong><small>Target {{ k.target.approval_pct }}%</small></div>
   <div class="kpi-card"><span>Error rate</span><strong>{{ k.err_pct }}<i>%</i></strong><small>Ceiling {{ k.target.error_pct }}%</small></div>
 </div>
 <div class="grid two">
   <div class="panel"><div class="panel-head"><div><span class="eyebrow">DAILY TREND</span><h2>Calls completed</h2></div></div><canvas id="agentTrend" height="155"></canvas></div>
   <div class="panel"><div class="panel-head"><div><span class="eyebrow">QUALITY TREND</span><h2>Approval & error rate</h2></div></div><canvas id="agentQuality" height="155"></canvas></div>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">TL DATA ENTRY</span><h2>Add or update this agent's daily metrics</h2></div></div>
+  <form method="post" action="{{ url_for('tl_update_agent_entry', agent_id=agent.id) }}" class="form-grid">
+    <label>Date<input type="date" name="entry_date" max="{{ end.isoformat() }}" required value="{{ end.isoformat() }}"></label>
+    <label>Total calls<input type="number" name="total_calls" min="0" required></label>
+    <label>Total approvals<input type="number" name="approvals" min="0" required></label>
+    <label>Total errors<input type="number" name="errors" min="0" required></label>
+    <div class="span-two"><button class="button">Save agent performance</button></div>
+  </form>
+  <p class="muted">Saving an existing date updates that day's record and writes an audit-history entry.</p>
 </div>
 <div class="panel"><div class="panel-head"><div><span class="eyebrow">AUDIT TRAIL</span><h2>Entry change history</h2></div></div><div id="history" class="history-list">Loading entry history…</div></div>
 {% endif %}
