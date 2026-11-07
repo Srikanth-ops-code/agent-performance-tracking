@@ -307,6 +307,68 @@ def admin_users():
                            month=date.today().strftime("%Y-%m"))
 
 
+@app.route("/admin/user/<int:user_id>/update", methods=["POST"])
+@login_required
+@role_required("admin")
+def update_user(user_id):
+    user = db.session.get(User, user_id)
+    if not user or user.id == current_user.id:
+        flash("You cannot edit this administrator account here.", "danger")
+        return redirect(url_for("admin_users"))
+
+    username = request.form.get("username", "").strip()
+    full_name = request.form.get("full_name", "").strip()
+    role = request.form.get("role", "")
+    tl_raw = request.form.get("tl_id") or None
+
+    if not username or not full_name or role not in ("admin", "tl", "agent"):
+        flash("Enter a valid name, username, and role.", "danger")
+        return redirect(url_for("admin_users"))
+    duplicate = User.query.filter(User.username == username, User.id != user.id).first()
+    if duplicate:
+        flash("That username is already in use.", "danger")
+        return redirect(url_for("admin_users"))
+    if user.team_members and role != "tl":
+        flash("This Team Lead still has assigned agents. Reassign those agents before changing the role.", "danger")
+        return redirect(url_for("admin_users"))
+
+    tl_id = None
+    if role == "agent":
+        try:
+            tl_id = int(tl_raw) if tl_raw else None
+        except (TypeError, ValueError):
+            tl_id = None
+        tl = db.session.get(User, tl_id) if tl_id else None
+        if not tl or tl.role != "tl" or not tl.active:
+            flash("Choose an active Team Lead for this agent.", "danger")
+            return redirect(url_for("admin_users"))
+
+    user.username = username
+    user.full_name = full_name
+    user.role = role
+    user.tl_id = tl_id
+    db.session.commit()
+    flash("User details updated.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/user/<int:user_id>/reset-password", methods=["POST"])
+@login_required
+@role_required("admin")
+def admin_reset_password(user_id):
+    user = db.session.get(User, user_id)
+    new_password = request.form.get("new_password", "")
+    if not user or user.id == current_user.id:
+        flash("You cannot reset this administrator password here.", "danger")
+    elif len(new_password) < 8:
+        flash("The new password must be at least 8 characters.", "danger")
+    else:
+        user.set_password(new_password)
+        db.session.commit()
+        flash(f"Password reset for {user.full_name}. Share the new password securely.", "success")
+    return redirect(url_for("admin_users"))
+
+
 @app.route("/admin/user/<int:user_id>/toggle", methods=["POST"])
 @login_required
 @role_required("admin")
@@ -388,6 +450,43 @@ def agent_dashboard():
     return render_template("agent_dashboard.html", k=k, y=start.year, m=start.month,
                            period=period, start=start, end=end,
                            month_name=cal.month_name[start.month])
+
+
+@app.route("/agent/roster", methods=["GET", "POST"])
+@login_required
+@role_required("agent")
+def agent_roster():
+    if request.method == "POST":
+        try:
+            off_date = datetime.strptime(request.form["off_date"], "%Y-%m-%d").date()
+            if off_date < date.today():
+                raise ValueError
+            existing = Roster.query.filter_by(agent_id=current_user.id, off_date=off_date).first()
+            if not existing:
+                db.session.add(Roster(agent_id=current_user.id, off_date=off_date))
+                db.session.commit()
+            flash("Your week-off date has been saved.", "success")
+        except (KeyError, ValueError):
+            db.session.rollback()
+            flash("Choose a valid date from today onward.", "danger")
+        return redirect(url_for("agent_roster"))
+
+    roster = Roster.query.filter_by(agent_id=current_user.id).order_by(Roster.off_date.asc()).all()
+    return render_template("agent_roster.html", roster=roster, today=date.today())
+
+
+@app.route("/agent/roster/<int:roster_id>/delete", methods=["POST"])
+@login_required
+@role_required("agent")
+def agent_delete_roster(roster_id):
+    row = db.session.get(Roster, roster_id)
+    if not row or row.agent_id != current_user.id:
+        flash("That week-off date does not belong to your account.", "danger")
+    else:
+        db.session.delete(row)
+        db.session.commit()
+        flash("Your week-off date has been removed.", "success")
+    return redirect(url_for("agent_roster"))
 
 
 @app.route("/agent/calendar")
