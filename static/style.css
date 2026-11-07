@@ -71,3 +71,6 @@
 .period-filter input,.period-filter select{min-width:120px;margin-top:5px}
 .period-filter [hidden]{display:none!important}
 @media(max-width:760px){.period-filter{width:100%;align-items:stretch}.period-filter label,.period-filter input,.period-filter select{width:100%}}
+
+/* Allow additional KPI cards without awkward overflow */
+.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
