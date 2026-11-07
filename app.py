@@ -515,7 +515,7 @@ def tl_update_agent_entry(agent_id):
     try:
         entry_date = datetime.strptime(request.form["entry_date"], "%Y-%m-%d").date()
         calls, approvals, errors = (int(request.form[x]) for x in ("total_calls", "approvals", "errors"))
-        if entry_date > date.today() or min(calls, approvals, errors) < 0 or approvals > calls or errors > approvals:
+        if entry_date > date.today() or min(calls, approvals, errors) < 0 or approvals > calls or errors > calls:
             raise ValueError
         entry = DailyEntry.query.filter_by(agent_id=agent.id, entry_date=entry_date).first()
         if entry:
@@ -533,7 +533,7 @@ def tl_update_agent_entry(agent_id):
         flash("Agent performance updated.", "success")
     except (KeyError, ValueError):
         db.session.rollback()
-        flash("Invalid entry. Approvals cannot exceed calls; errors cannot exceed approvals.", "danger")
+        flash("Invalid entry. Approvals and errors cannot exceed calls.", "danger")
     return redirect(url_for("tl_agent", agent_id=agent.id, period="day",
                             date=request.form.get("entry_date", date.today().isoformat())))
 
