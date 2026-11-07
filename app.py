@@ -73,7 +73,7 @@ class DailyEntry(db.Model):
 
     @property
     def error_pct(self):
-        return round(self.errors * 100 / self.total_calls, 2) if self.total_calls else 0
+        return round(self.errors * 100 / self.approvals, 2) if self.approvals else 0
 
 
 class EntryHistory(db.Model):
@@ -136,70 +136,87 @@ def my_agents():
     return User.query.filter_by(role="agent", tl_id=current_user.id, active=True).order_by(User.full_name).all()
 
 
-def working_days_in_month(agent_id, year, month):
-    first, last = month_bounds(year, month)
+def working_days_between(agent_id, start_date, end_date):
+    """Weekdays in the selected range, excluding the agent's assigned roster offs."""
+    if end_date < start_date:
+        return []
     offs = {r.off_date for r in Roster.query.filter(
-        Roster.agent_id == agent_id, Roster.off_date >= first, Roster.off_date <= last
+        Roster.agent_id == agent_id,
+        Roster.off_date >= start_date,
+        Roster.off_date <= end_date
     ).all()}
-    return [date(year, month, day) for day in range(1, last.day + 1)
-            if date(year, month, day) not in offs]
+    days = []
+    current = start_date
+    while current <= end_date:
+        if current.weekday() < 5 and current not in offs:
+            days.append(current)
+        current = date.fromordinal(current.toordinal() + 1)
+    return days
 
 
-def agent_kpis(agent_id, year, month):
-    first, last = month_bounds(year, month)
-    target = get_target(f"{year}-{month:02d}")
+def selected_period():
+    """Return a validated date range; all dashboard ranges stop at today."""
+    today = date.today()
+    period = request.args.get("period", "month")
+    try:
+        if period == "day":
+            chosen = datetime.strptime(request.args.get("date", today.isoformat()), "%Y-%m-%d").date()
+            start = end = chosen
+        elif period == "week":
+            chosen = datetime.strptime(request.args.get("date", today.isoformat()), "%Y-%m-%d").date()
+            start = date.fromordinal(chosen.toordinal() - chosen.weekday())
+            end = date.fromordinal(start.toordinal() + 6)
+        elif period == "custom":
+            start = datetime.strptime(request.args["start"], "%Y-%m-%d").date()
+            end = datetime.strptime(request.args["end"], "%Y-%m-%d").date()
+            if end < start:
+                raise ValueError
+        else:
+            period = "month"
+            year = int(request.args.get("y", today.year))
+            month = int(request.args.get("m", today.month))
+            start, end = month_bounds(year, month)
+        if start > today:
+            start = today
+        end = min(end, today)
+        if end < start:
+            end = start
+        return period, start, end
+    except (KeyError, TypeError, ValueError):
+        first, last = month_bounds(today.year, today.month)
+        return "month", first, today
+
+
+def agent_kpis(agent_id, start, end):
+    month_target = get_target(start.strftime("%Y-%m"))
     entries = DailyEntry.query.filter(
         DailyEntry.agent_id == agent_id,
-        DailyEntry.entry_date >= first,
-        DailyEntry.entry_date <= last
+        DailyEntry.entry_date >= start,
+        DailyEntry.entry_date <= end
     ).order_by(DailyEntry.entry_date).all()
-
-    days_done = len(entries)
     total_calls = sum(e.total_calls for e in entries)
     total_approvals = sum(e.approvals for e in entries)
     total_errors = sum(e.errors for e in entries)
-    avg_calls = round(total_calls / days_done, 1) if days_done else 0
+    work_days = working_days_between(agent_id, start, end)
+    divisor = len(work_days)
+    avg_calls = round(total_calls / divisor, 1) if divisor else 0
+    avg_approvals = round(total_approvals / divisor, 1) if divisor else 0
     approval_pct = round(total_approvals * 100 / total_calls, 2) if total_calls else 0
-    error_pct = round(total_errors * 100 / total_calls, 2) if total_calls else 0
-
-    work_days = working_days_in_month(agent_id, year, month)
-    today = date.today()
-    remaining = [d for d in work_days if d >= today] if (year, month) == (today.year, today.month) else []
-    reminder = []
-    if remaining and days_done:
-        needed_total = target.avg_calls * len(work_days)
-        needed_per_day = round((needed_total - total_calls) / len(remaining))
-        if needed_per_day > target.avg_calls:
-            reminder.append(f"You need about {needed_per_day} calls per working day for the rest of the month to reach your {int(target.avg_calls)} average.")
-        elif avg_calls < target.avg_calls:
-            reminder.append(f"Your current average is {avg_calls}. Aim for around {max(needed_per_day, 0)} calls per remaining working day.")
-        if approval_pct < target.approval_pct:
-            reminder.append(f"Approval is {approval_pct}%. Target: {target.approval_pct}%.")
-        if error_pct > target.error_pct:
-            reminder.append(f"Errors are {error_pct}%. Keep them under {target.error_pct}%.")
+    error_pct = round(total_errors * 100 / total_approvals, 2) if total_approvals else 0
     chart = {
         "labels": [e.entry_date.strftime("%d %b") for e in entries],
         "calls": [e.total_calls for e in entries],
+        "approvals": [e.approvals for e in entries],
         "approval_pct": [e.approval_pct for e in entries],
         "error_pct": [e.error_pct for e in entries],
     }
     return {
-        "target": target, "days_done": days_done, "total_calls": total_calls,
-        "total_appr": total_approvals, "total_err": total_errors,
-        "avg_calls": avg_calls, "appr_pct": approval_pct, "err_pct": error_pct,
-        "reminder": reminder, "chart": chart, "entries": entries
+        "target": month_target, "days_done": len(entries), "working_days": divisor,
+        "total_calls": total_calls, "total_appr": total_approvals, "total_err": total_errors,
+        "avg_calls": avg_calls, "avg_approvals": avg_approvals,
+        "appr_pct": approval_pct, "err_pct": error_pct,
+        "reminder": [], "chart": chart, "entries": entries
     }
-
-
-def parse_month():
-    try:
-        year = int(request.args.get("y", date.today().year))
-        month = int(request.args.get("m", date.today().month))
-        if not 1 <= month <= 12 or not 2000 <= year <= 2100:
-            raise ValueError
-        return year, month
-    except (TypeError, ValueError):
-        return date.today().year, date.today().month
 
 
 # -------------------------------- AUTH --------------------------------------
@@ -366,10 +383,11 @@ def delete_roster(roster_id):
 @login_required
 @role_required("agent")
 def agent_dashboard():
-    year, month = parse_month()
-    k = agent_kpis(current_user.id, year, month)
-    return render_template("agent_dashboard.html", k=k, y=year, m=month,
-                           month_name=cal.month_name[month])
+    period, start, end = selected_period()
+    k = agent_kpis(current_user.id, start, end)
+    return render_template("agent_dashboard.html", k=k, y=start.year, m=start.month,
+                           period=period, start=start, end=end,
+                           month_name=cal.month_name[start.month])
 
 
 @app.route("/agent/calendar")
@@ -430,16 +448,17 @@ def save_entry():
 @login_required
 @role_required("tl")
 def tl_team():
-    year, month = parse_month()
+    period, start, end = selected_period()
     agents = my_agents()
-    rows, team_calls, team_approvals, team_errors = [], 0, 0, 0
+    rows, team_calls, team_approvals, team_errors, team_workdays = [], 0, 0, 0, 0
     daily = {}
     for agent in agents:
-        k = agent_kpis(agent.id, year, month)
+        k = agent_kpis(agent.id, start, end)
         rows.append({"agent": agent, "k": k})
         team_calls += k["total_calls"]
         team_approvals += k["total_appr"]
         team_errors += k["total_err"]
+        team_workdays += k["working_days"]
         for entry in k["entries"]:
             bucket = daily.setdefault(entry.entry_date, [0, 0, 0])
             bucket[0] += entry.total_calls
@@ -450,20 +469,24 @@ def tl_team():
         "labels": [d.strftime("%d %b") for d in days],
         "calls": [daily[d][0] for d in days],
         "approval_pct": [round(daily[d][1] * 100 / daily[d][0], 2) if daily[d][0] else 0 for d in days],
-        "error_pct": [round(daily[d][2] * 100 / daily[d][0], 2) if daily[d][0] else 0 for d in days],
+        "error_pct": [round(daily[d][2] * 100 / daily[d][1], 2) if daily[d][1] else 0 for d in days],
         "agent_names": [r["agent"].full_name for r in rows],
         "agent_calls": [r["k"]["total_calls"] for r in rows],
     }
     team = {
-        "total_calls": team_calls,
+        "total_calls": team_calls, "total_approvals": team_approvals,
+        "total_errors": team_errors,
+        "avg_calls": round(team_calls / team_workdays, 1) if team_workdays else 0,
+        "avg_approvals": round(team_approvals / team_workdays, 1) if team_workdays else 0,
         "appr_pct": round(team_approvals * 100 / team_calls, 2) if team_calls else 0,
-        "err_pct": round(team_errors * 100 / team_calls, 2) if team_calls else 0,
-        "agent_count": len(agents),
-        "target": get_target(f"{year}-{month:02d}")
+        "err_pct": round(team_errors * 100 / team_approvals, 2) if team_approvals else 0,
+        "agent_count": len(agents), "working_days": team_workdays,
+        "target": get_target(start.strftime("%Y-%m"))
     }
     return render_template("tl_dashboard.html", mode="team", team=team, rows=rows,
-                           chart=chart, agents=agents, y=year, m=month,
-                           month_name=cal.month_name[month])
+                           chart=chart, agents=agents, y=start.year, m=start.month,
+                           period=period, start=start, end=end,
+                           month_name=cal.month_name[start.month])
 
 
 @app.route("/tl/agent/<int:agent_id>")
@@ -473,12 +496,46 @@ def tl_agent(agent_id):
     agent = db.session.get(User, agent_id)
     if not agent or agent.role != "agent" or agent.tl_id != current_user.id:
         return "Access denied", 403
-    year, month = parse_month()
-    k = agent_kpis(agent.id, year, month)
+    period, start, end = selected_period()
+    k = agent_kpis(agent.id, start, end)
     return render_template("tl_dashboard.html", mode="agent", agent=agent, k=k,
-                           agents=my_agents(), y=year, m=month,
-                           month_name=cal.month_name[month], team=None, rows=None,
+                           agents=my_agents(), y=start.year, m=start.month,
+                           period=period, start=start, end=end,
+                           month_name=cal.month_name[start.month], team=None, rows=None,
                            chart=k["chart"])
+
+
+@app.route("/tl/agent/<int:agent_id>/entry", methods=["POST"])
+@login_required
+@role_required("tl")
+def tl_update_agent_entry(agent_id):
+    agent = db.session.get(User, agent_id)
+    if not agent or agent.role != "agent" or agent.tl_id != current_user.id:
+        return "Access denied", 403
+    try:
+        entry_date = datetime.strptime(request.form["entry_date"], "%Y-%m-%d").date()
+        calls, approvals, errors = (int(request.form[x]) for x in ("total_calls", "approvals", "errors"))
+        if entry_date > date.today() or min(calls, approvals, errors) < 0 or approvals > calls or errors > approvals:
+            raise ValueError
+        entry = DailyEntry.query.filter_by(agent_id=agent.id, entry_date=entry_date).first()
+        if entry:
+            old = f"{entry.total_calls}/{entry.approvals}/{entry.errors}"
+            entry.total_calls, entry.approvals, entry.errors = calls, approvals, errors
+        else:
+            old = "new entry"
+            entry = DailyEntry(agent_id=agent.id, entry_date=entry_date,
+                               total_calls=calls, approvals=approvals, errors=errors)
+            db.session.add(entry)
+            db.session.flush()
+        db.session.add(EntryHistory(entry_id=entry.id, changed_by=current_user.id,
+                                    old_values=old, new_values=f"{calls}/{approvals}/{errors}"))
+        db.session.commit()
+        flash("Agent performance updated.", "success")
+    except (KeyError, ValueError):
+        db.session.rollback()
+        flash("Invalid entry. Approvals cannot exceed calls; errors cannot exceed approvals.", "danger")
+    return redirect(url_for("tl_agent", agent_id=agent.id, period="day",
+                            date=request.form.get("entry_date", date.today().isoformat())))
 
 
 @app.route("/tl/history/<int:agent_id>")
