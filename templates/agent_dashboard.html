@@ -33,8 +33,6 @@
 {% if k.reminder %}<div class="reminder"><div class="reminder-icon">!</div><div><strong>Performance check-in</strong>{% for msg in k.reminder %}<p>{{ msg }}</p>{% endfor %}</div></div>{% endif %}
 <div class="kpi-grid">
   <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong><small>Selected-period total</small></div>
-  <div class="kpi-card"><span>Total approvals</span><strong>{{ "{:,}".format(k.total_appr) }}</strong><small>Selected-period total</small></div>
-  <div class="kpi-card"><span>Total errors</span><strong>{{ "{:,}".format(k.total_err) }}</strong><small>Selected-period total</small></div>
   <div class="kpi-card"><span>Average calls / working day</span><strong>{{ k.avg_calls }}</strong><small>{{ k.working_days }} working days</small></div>
   <div class="kpi-card"><span>Average approvals / working day</span><strong>{{ k.avg_approvals }}</strong><small>{{ k.working_days }} working days</small></div>
   <div class="kpi-card"><span>Approval rate</span><strong>{{ k.appr_pct }}<i>%</i></strong><small>Target {{ k.target.approval_pct }}%</small></div>
