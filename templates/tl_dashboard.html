@@ -35,7 +35,6 @@
   <div class="kpi-card"><span>Total approvals</span><strong>{{ "{:,}".format(team.total_approvals) }}</strong><small>Selected-period total</small></div>
   <div class="kpi-card"><span>Total errors</span><strong>{{ "{:,}".format(team.total_errors) }}</strong><small>Selected-period total</small></div>
   <div class="kpi-card"><span>Average calls / working day</span><strong>{{ team.avg_calls }}</strong><small>{{ team.working_days }} agent working days</small></div>
-  <div class="kpi-card"><span>Total approvals</span><strong>{{ "{:,}".format(team.total_approvals) }}</strong><small>Selected-period total</small></div>
   <div class="kpi-card"><span>Average approvals / working day</span><strong>{{ team.avg_approvals }}</strong><small>{{ team.working_days }} agent working days</small></div>
   <div class="kpi-card"><span>Active agents</span><strong>{{ team.agent_count }}</strong><small>Assigned to you</small></div>
   <div class="kpi-card"><span>Approval rate</span><strong>{{ team.appr_pct }}<i>%</i></strong><small>Team weighted rate</small></div>
@@ -48,11 +47,11 @@
 <div class="panel">
   <div class="panel-head"><div><span class="eyebrow">TEAM ROSTER</span><h2>Agent scorecard</h2></div><span class="tag">{{ month_name }} {{ y }}</span></div>
   <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Days entered</th><th>Total calls</th><th>Total approvals</th><th>Total errors</th><th>Avg calls</th><th>Avg approvals</th><th>Approval %</th><th>Error %</th><th>Details</th></tr></thead><tbody>
-  {% for row in rows %}<tr><td><strong>{{ row.agent.full_name }}</strong></td><td>{{ row.k.days_done }}</td><td>{{ "{:,}".format(row.k.total_calls) }}</td><td>{{ "{:,}".format(row.k.total_appr) }}</td><td>{{ "{:,}".format(row.k.total_err) }}</td><td>{{ row.k.avg_calls }}</td><td>{{ row.k.avg_approvals }}</td><td>{{ row.k.appr_pct }}%</td><td>{{ row.k.err_pct }}%</td><td><a class="text-button" href="{{ url_for('tl_agent', agent_id=row.agent.id, y=y, m=m) }}">View →</a></td></tr>{% else %}<tr><td colspan="10" class="empty">No active agents are assigned to your account. Ask an administrator to assign agents.</td></tr>{% endfor %}
+  {% for row in rows %}<tr><td><strong>{{ row.agent.full_name }}</strong></td><td>{{ row.k.days_done }}</td><td>{{ "{:,}".format(row.k.total_calls) }}</td><td>{{ "{:,}".format(row.k.total_appr) }}</td><td>{{ "{:,}".format(row.k.total_err) }}</td><td>{{ row.k.avg_calls }}</td><td>{{ row.k.avg_approvals }}</td><td>{{ row.k.appr_pct }}%</td><td>{{ row.k.err_pct }}%</td><td><a class="text-button" href="{{ url_for('tl_agent', agent_id=row.agent.id, period=period, date=start.isoformat(), start=start.isoformat(), end=end.isoformat(), y=y, m=m) }}">View →</a></td></tr>{% else %}<tr><td colspan="10" class="empty">No active agents are assigned to your account. Ask an administrator to assign agents.</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
 {% else %}
-<div class="intro-row"><a class="text-button" href="{{ url_for('tl_team', y=y, m=m) }}">← Back to team</a><span class="tag">AGENT DETAIL</span></div>
+<div class="intro-row"><a class="text-button" href="{{ url_for('tl_team', period=period, date=start.isoformat(), start=start.isoformat(), end=end.isoformat(), y=y, m=m) }}">← Back to team</a><span class="tag">AGENT DETAIL</span></div>
 <div class="kpi-grid">
   <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong></div>
   <div class="kpi-card"><span>Total approvals</span><strong>{{ "{:,}".format(k.total_appr) }}</strong></div>
