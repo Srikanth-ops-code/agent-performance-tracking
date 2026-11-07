@@ -3,17 +3,38 @@
 {% block heading %}My Performance Overview{% endblock %}
 {% block content %}
 <div class="intro-row">
-  <div>
-    <p class="muted">
-      Monthly performance summary for {{ month_name }} {{ y }}.
-    </p>
-  </div>
-
-  <form class="month-filter"><input type="number" name="y" value="{{ y }}" min="2000" max="2100"><select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ month_name if n==m else ['','January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select><button class="button button-secondary">View</button></form></div>
+  <p class="muted">Performance from {{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}.</p>
+  <form class="period-filter" method="get">
+    <label>View period<select name="period" id="periodSelect">
+      <option value="day" {{ 'selected' if period=='day' else '' }}>Day</option>
+      <option value="week" {{ 'selected' if period=='week' else '' }}>Week</option>
+      <option value="month" {{ 'selected' if period=='month' else '' }}>Month</option>
+      <option value="custom" {{ 'selected' if period=='custom' else '' }}>Custom range</option>
+    </select></label>
+    <label class="period-date">Date<input type="date" name="date" value="{{ start.isoformat() }}"></label>
+    <label class="period-month">Year<input type="number" name="y" value="{{ start.year }}" min="2000" max="2100"></label>
+    <label class="period-month">Month<select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ ['', 'January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select></label>
+    <label class="period-custom">From<input type="date" name="start" value="{{ start.isoformat() }}"></label>
+    <label class="period-custom">To<input type="date" name="end" value="{{ end.isoformat() }}"></label>
+    <button class="button button-secondary">Apply</button>
+  </form>
+</div>
+<script>
+(function(){
+ const p=document.getElementById('periodSelect');
+ function sync(){
+  document.querySelectorAll('.period-date').forEach(x=>x.hidden=!['day','week'].includes(p.value));
+  document.querySelectorAll('.period-month').forEach(x=>x.hidden=p.value!=='month');
+  document.querySelectorAll('.period-custom').forEach(x=>x.hidden=p.value!=='custom');
+ }
+ p.addEventListener('change',sync); sync();
+})();
+</script>
 {% if k.reminder %}<div class="reminder"><div class="reminder-icon">!</div><div><strong>Performance check-in</strong>{% for msg in k.reminder %}<p>{{ msg }}</p>{% endfor %}</div></div>{% endif %}
 <div class="kpi-grid">
-  <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong><small>Monthly volume</small></div>
-  <div class="kpi-card"><span>Average calls / day</span><strong>{{ k.avg_calls }}</strong><small>Target {{ k.target.avg_calls|int }}</small></div>
+  <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong><small>Selected-period volume</small></div>
+  <div class="kpi-card"><span>Average calls / working day</span><strong>{{ k.avg_calls }}</strong><small>{{ k.working_days }} working days</small></div>
+  <div class="kpi-card"><span>Average approvals / working day</span><strong>{{ k.avg_approvals }}</strong><small>{{ k.working_days }} working days</small></div>
   <div class="kpi-card"><span>Approval rate</span><strong>{{ k.appr_pct }}<i>%</i></strong><small>Target {{ k.target.approval_pct }}%</small></div>
   <div class="kpi-card"><span>Error rate</span><strong>{{ k.err_pct }}<i>%</i></strong><small>Ceiling {{ k.target.error_pct }}%</small></div>
 </div>
