@@ -439,7 +439,20 @@ def delete_roster(roster_id):
         flash("Week-off removed.", "success")
     return redirect(url_for("admin_roster"))
 
+def parse_month():
+    today = date.today()
 
+    try:
+        year = int(request.args.get("y", today.year))
+        month = int(request.args.get("m", today.month))
+
+        if not 2000 <= year <= 2100 or not 1 <= month <= 12:
+            raise ValueError
+
+        return year, month
+
+    except (ValueError, TypeError):
+        return today.year, today.month
 # -------------------------------- AGENT -------------------------------------
 @app.route("/agent")
 @login_required
