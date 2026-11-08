@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Error spreadsheets · Daily Tracker{% endblock %}
+{% block heading %}Error Management Spreadsheets{% endblock %}
+{% block content %}
+<div class="intro-row">
+  <p class="muted">Add the Google Sheets or Excel Online link your agents should use for each reporting month. Saving another link for the same month updates the existing one.</p>
+  <a class="text-button" href="{{ url_for('tl_team') }}">← Back to team</a>
+</div>
+<div class="panel narrow">
+  <div class="panel-head"><div><span class="eyebrow">TEAM RESOURCE</span><h2>Upload spreadsheet link</h2></div></div>
+  <form method="post" class="form-grid">
+    <label>Database entry month<input type="month" name="month" required></label>
+    <label class="span-two">Google Sheets / Excel spreadsheet link<input type="url" name="spreadsheet_url" placeholder="https://..." required></label>
+    <div class="span-two"><button class="button">Save spreadsheet</button></div>
+  </form>
+  <p class="hint">Use a share link that your agents have permission to open. The link will be visible only to agents assigned to your team.</p>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">SAVED RESOURCES</span><h2>Monthly spreadsheets</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Month</th><th>Spreadsheet</th><th>Action</th></tr></thead><tbody>
+  {% for item in spreadsheets %}
+    <tr><td><strong>{{ item.month }}</strong></td><td><a class="text-button" href="{{ item.spreadsheet_url }}" target="_blank" rel="noopener noreferrer">Open spreadsheet ↗</a></td><td><span class="muted">Edit by saving a new link for this month</span></td></tr>
+  {% else %}<tr><td colspan="3" class="empty">No error management spreadsheets have been added yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endblock %}
