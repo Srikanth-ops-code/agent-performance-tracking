@@ -33,10 +33,10 @@
 {% if k.reminder %}<div class="reminder"><div class="reminder-icon">!</div><div><strong>Performance check-in</strong>{% for msg in k.reminder %}<p>{{ msg }}</p>{% endfor %}</div></div>{% endif %}
 <div class="kpi-grid">
   <div class="kpi-card"><span>Total calls</span><strong>{{ "{:,}".format(k.total_calls) }}</strong><small>Selected-period total</small></div>
-  <div class="kpi-card"><span>Average calls </span><strong>{{ k.avg_calls }}</strong><small>{{ k.working_days }} working days</small></div>
-  <div class="kpi-card"><span>Average approvals </span><strong>{{ k.avg_approvals }}</strong><small>{{ k.working_days }} working days</small></div>
-  <div class="kpi-card"><span>Approval rate</span><strong>{{ k.appr_pct }}<i>%</i></strong><small>Target {{ k.target.approval_pct }}%</small></div>
-  <div class="kpi-card"><span>Error rate</span><strong>{{ k.err_pct }}<i>%</i></strong><small>Ceiling {{ k.target.error_pct }}%</small></div>
+  <div class="kpi-card"><span>Average calls </span><strong>{{ k.total_calls }}</strong><small>{{ k.working_days }} working days</small></div>
+  <div class="kpi-card"><span>Average approvals </span><strong>{{ k.total_approvals }}</strong><small>{{ k.total_calls }} working days</small></div>
+  <div class="kpi-card"><span>Approval rate</span><strong>{{ k.appr_pct }}<i>%</i></strong><small>Target: {{ k.target.approval_pct }}%</small></div>
+  <div class="kpi-card"><span>Error rate</span><strong>{{ k.err_pct }}<i>%</i></strong> <small>Ceiling: {{ k.target.error_pct }}%</small></div>
 </div>
 <div class="grid two">
   <div class="panel"><div class="panel-head"><div><span class="eyebrow">DAILY TREND</span><h2>Calls completed</h2></div><span class="tag">{{ k.days_done }} entries</span></div><canvas id="callsChart" height="150"></canvas></div>
