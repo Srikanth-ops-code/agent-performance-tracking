@@ -19,7 +19,10 @@
       <label class="tl-custom">To<input type="date" name="end" value="{{ end.isoformat() }}"></label>
       <button class="button button-secondary">Apply</button>
     </form>
-    {% if mode == 'team' %}<a class="button button-secondary" href="{{ url_for('export_team', y=y, m=m) }}">⇩ Excel</a>{% endif %}
+    {% if mode == 'team' %}
+      <a class="button button-secondary" href="{{ url_for('tl_error_spreadsheets') }}">▤ Upload Error Spreadsheet</a>
+      <a class="button button-secondary" href="{{ url_for('export_team', y=y, m=m) }}">⇩ Excel</a>
+    {% endif %}
   </div>
 </div>
 <script>
