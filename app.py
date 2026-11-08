@@ -91,6 +91,7 @@ class Roster(db.Model):
     agent_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     off_date = db.Column(db.Date, nullable=False)
     roster_type = db.Column(db.String(20), nullable=False, default="weekoff")
+    agent_entered = db.Column(db.Boolean, nullable=False, default=False)
     agent = db.relationship("User", backref="roster_days")
     __table_args__ = (UniqueConstraint("agent_id", "off_date", name="uq_agent_off_date"),)
 
@@ -164,7 +165,8 @@ def working_days_between(agent_id, start_date, end_date):
             Roster.agent_id == agent_id,
             Roster.off_date >= start_date,
             Roster.off_date <= end_date,
-            Roster.roster_type.in_(("weekoff", "leave"))
+            Roster.roster_type.in_(("weekoff", "leave")),
+            Roster.agent_entered.is_(True)
         ).distinct().all()
     }
     return sorted(entered_dates - marked_off_dates)
@@ -501,12 +503,14 @@ def agent_roster():
 
             if existing:
                 existing.roster_type = roster_type
+                existing.agent_entered = True
             else:
                 db.session.add(
                     Roster(
                         agent_id=current_user.id,
                         off_date=off_date,
-                        roster_type=roster_type
+                        roster_type=roster_type,
+                        agent_entered=True
                     )
                 )
             db.session.commit()
@@ -865,6 +869,11 @@ def initialize_database():
         with db.engine.begin() as connection:
             connection.exec_driver_sql(
                 "ALTER TABLE roster ADD COLUMN roster_type VARCHAR(20) NOT NULL DEFAULT 'weekoff'"
+            )
+    if "agent_entered" not in roster_columns:
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE roster ADD COLUMN agent_entered BOOLEAN NOT NULL DEFAULT FALSE"
             )
 
     if not User.query.filter_by(username="admin").first():
