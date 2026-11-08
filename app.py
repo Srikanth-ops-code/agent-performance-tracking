@@ -94,6 +94,16 @@ class Roster(db.Model):
     __table_args__ = (UniqueConstraint("agent_id", "off_date", name="uq_agent_off_date"),)
 
 
+class ErrorSpreadsheet(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tl_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    month = db.Column(db.String(7), nullable=False)
+    spreadsheet_url = db.Column(db.String(1000), nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    team_lead = db.relationship("User")
+    __table_args__ = (UniqueConstraint("tl_id", "month", name="uq_tl_error_spreadsheet_month"),)
+
+
 class Target(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     month = db.Column(db.String(7), unique=True, nullable=False)
@@ -573,6 +583,54 @@ def save_entry():
     except (KeyError, ValueError):
         flash("Please enter valid whole-number values. Approvals and errors cannot exceed calls.", "danger")
         return redirect(url_for("agent_calendar"))
+
+
+# -------------------------- ERROR MANAGEMENT -------------------------------
+@app.route("/tl/error-spreadsheets", methods=["GET", "POST"])
+@login_required
+@role_required("tl")
+def tl_error_spreadsheets():
+    if request.method == "POST":
+        try:
+            month = request.form["month"].strip()
+            datetime.strptime(month, "%Y-%m")
+            spreadsheet_url = request.form["spreadsheet_url"].strip()
+            if not spreadsheet_url.startswith("https://") or len(spreadsheet_url) > 1000:
+                raise ValueError
+            item = ErrorSpreadsheet.query.filter_by(
+                tl_id=current_user.id, month=month
+            ).first()
+            if item:
+                item.spreadsheet_url = spreadsheet_url
+            else:
+                db.session.add(ErrorSpreadsheet(
+                    tl_id=current_user.id,
+                    month=month,
+                    spreadsheet_url=spreadsheet_url
+                ))
+            db.session.commit()
+            flash("Error management spreadsheet saved for " + month + ".", "success")
+        except (KeyError, ValueError):
+            db.session.rollback()
+            flash("Enter a valid month and a secure HTTPS spreadsheet link.", "danger")
+        return redirect(url_for("tl_error_spreadsheets"))
+
+    spreadsheets = ErrorSpreadsheet.query.filter_by(
+        tl_id=current_user.id
+    ).order_by(ErrorSpreadsheet.month.desc()).all()
+    return render_template("tl_error_spreadsheets.html", spreadsheets=spreadsheets)
+
+
+@app.route("/agent/error-management")
+@login_required
+@role_required("agent")
+def agent_error_management():
+    spreadsheets = []
+    if current_user.tl_id:
+        spreadsheets = ErrorSpreadsheet.query.filter_by(
+            tl_id=current_user.tl_id
+        ).order_by(ErrorSpreadsheet.month.desc()).all()
+    return render_template("agent_error_management.html", spreadsheets=spreadsheets)
 
 
 # -------------------------------- TEAM LEAD ---------------------------------
