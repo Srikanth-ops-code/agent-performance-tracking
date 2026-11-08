@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Error Management · Daily Tracker{% endblock %}
+{% block heading %}Error Management{% endblock %}
+{% block content %}
+<div class="intro-row">
+  <p class="muted">Open the error management spreadsheet shared by your Team Lead.</p>
+  <a class="text-button" href="{{ url_for('agent_roster') }}">← Back to week-offs</a>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><span class="eyebrow">TEAM SPREADSHEETS</span><h2>Monthly error management files</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Database entry month</th><th>Spreadsheet</th></tr></thead><tbody>
+  {% for item in spreadsheets %}
+    <tr><td><strong>{{ item.month }}</strong></td><td><a class="button button-secondary" href="{{ item.spreadsheet_url }}" target="_blank" rel="noopener noreferrer">Open Error Spreadsheet ↗</a></td></tr>
+  {% else %}<tr><td colspan="2" class="empty">Your Team Lead has not uploaded an error management spreadsheet yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endblock %}
