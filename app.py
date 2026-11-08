@@ -9,7 +9,7 @@ from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, inspect
 from io import BytesIO
 from openpyxl import Workbook, load_workbook
 
@@ -90,6 +90,7 @@ class Roster(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agent_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     off_date = db.Column(db.Date, nullable=False)
+    roster_type = db.Column(db.String(20), nullable=False, default="weekoff")
     agent = db.relationship("User", backref="roster_days")
     __table_args__ = (UniqueConstraint("agent_id", "off_date", name="uq_agent_off_date"),)
 
@@ -484,26 +485,32 @@ def agent_roster():
             off_date = datetime.strptime(
                 request.form["off_date"], "%Y-%m-%d"
             ).date()
+            roster_type = request.form.get("roster_type", "").strip().lower()
+            if roster_type not in ("weekoff", "leave"):
+                raise ValueError
 
             existing = Roster.query.filter_by(
                 agent_id=current_user.id,
                 off_date=off_date
             ).first()
 
-            if not existing:
+            if existing:
+                existing.roster_type = roster_type
+            else:
                 db.session.add(
                     Roster(
                         agent_id=current_user.id,
-                        off_date=off_date
+                        off_date=off_date,
+                        roster_type=roster_type
                     )
                 )
-                db.session.commit()
-
-            flash("Your week-off date has been saved.", "success")
+            db.session.commit()
+            label = "Week-off" if roster_type == "weekoff" else "Leave"
+            flash(f"Your {label.lower()} date has been saved.", "success")
 
         except (KeyError, ValueError):
             db.session.rollback()
-            flash("Choose a valid date.", "danger")
+            flash("Choose a valid date and select Week-off or Leave.", "danger")
 
         return redirect(url_for("agent_roster"))
 
@@ -541,13 +548,17 @@ def agent_calendar():
     entries = {e.entry_date.day: e for e in DailyEntry.query.filter(
         DailyEntry.agent_id == current_user.id,
         DailyEntry.entry_date >= first, DailyEntry.entry_date <= last).all()}
-    offs = {r.off_date.day for r in Roster.query.filter(
-        Roster.agent_id == current_user.id, Roster.off_date >= first, Roster.off_date <= last).all()}
+    roster_rows = Roster.query.filter(
+        Roster.agent_id == current_user.id, Roster.off_date >= first, Roster.off_date <= last
+    ).all()
+    offs = {r.off_date.day for r in roster_rows}
+    roster_types = {r.off_date.day: r.roster_type for r in roster_rows}
     entry_data = {str(day): {"total_calls": e.total_calls, "approvals": e.approvals, "errors": e.errors}
                   for day, e in entries.items()}
     weeks = cal.Calendar(firstweekday=0).monthdayscalendar(year, month)
     return render_template("calendar.html", y=year, m=month, weeks=weeks, entries=entries,
-                           entry_data=entry_data, offs=offs, month_name=cal.month_name[month], today=date.today())
+                           entry_data=entry_data, offs=offs, roster_types=roster_types,
+                           month_name=cal.month_name[month], today=date.today())
 
 
 @app.route("/agent/entry", methods=["POST"])
@@ -842,6 +853,14 @@ def inject_now_label():
 # ------------------------------- STARTUP -----------------------------------
 def initialize_database():
     db.create_all()
+
+    # Add the roster type to existing deployments without losing saved dates.
+    roster_columns = {column["name"] for column in inspect(db.engine).get_columns("roster")}
+    if "roster_type" not in roster_columns:
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE roster ADD COLUMN roster_type VARCHAR(20) NOT NULL DEFAULT 'weekoff'"
+            )
 
     if not User.query.filter_by(username="admin").first():
         admin = User(
