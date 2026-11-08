@@ -2,7 +2,7 @@
 {% block title %}Daily calendar · Daily Tracker{% endblock %}
 {% block heading %}Daily performance calendar{% endblock %}
 {% block content %}
-<div class="intro-row"><p class="muted">Select a date to add or update your daily numbers. Green dates have saved entries; muted dates are roster week-offs.</p><form class="month-filter"><input type="number" name="y" value="{{ y }}" min="2000" max="2100"><select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ ['','January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select><button class="button button-secondary">Go</button></form></div>
+<div class="intro-row"><p class="muted">Select a date to add or update your daily numbers. Green dates have saved entries; muted dates are week-offs or leave days.</p><form class="month-filter"><input type="number" name="y" value="{{ y }}" min="2000" max="2100"><select name="m">{% for n in range(1,13) %}<option value="{{ n }}" {{ 'selected' if n==m else '' }}>{{ ['','January','February','March','April','May','June','July','August','September','October','November','December'][n] }}</option>{% endfor %}</select><button class="button button-secondary">Go</button></form></div>
 <div class="grid calendar-layout">
   <div class="panel calendar-panel">
     <div class="calendar-title"><a href="{{ url_for('agent_calendar', y=(y-1 if m==1 else y), m=(12 if m==1 else m-1)) }}">‹</a><h2>{{ month_name }} {{ y }}</h2><a href="{{ url_for('agent_calendar', y=(y+1 if m==12 else y), m=(1 if m==12 else m+1)) }}">›</a></div>
@@ -10,11 +10,11 @@
     {% for week in weeks %}{% for day in week %}
       {% if day == 0 %}<div class="day blank"></div>{% else %}
       <button class="day {{ 'has-entry' if day in entries else '' }} {{ 'week-off' if day in offs else '' }} {{ 'today' if y==today.year and m==today.month and day==today.day else '' }}" onclick="selectDay({{ day }})">
-        <span>{{ day }}</span>{% if day in entries %}<small>{{ entries[day].total_calls }} calls</small>{% elif day in offs %}<small>Week off</small>{% endif %}
+        <span>{{ day }}</span>{% if day in entries %}<small>{{ entries[day].total_calls }} calls</small>{% elif day in offs %}<small>{{ 'Week-off' if roster_types.get(day) == 'weekoff' else 'Leave' }}</small>{% endif %}
       </button>
       {% endif %}
     {% endfor %}{% endfor %}</div>
-    <div class="legend"><span><i class="dot green"></i> Entry saved</span><span><i class="dot gray"></i> Week off</span><span><i class="dot blue"></i> Today</span></div>
+    <div class="legend"><span><i class="dot green"></i> Entry saved</span><span><i class="dot gray"></i> Week-off / Leave</span><span><i class="dot blue"></i> Today</span></div>
   </div>
   <div class="panel entry-panel">
     <span class="eyebrow">DAILY DATA ENTRY</span><h2 id="entry-title">Select a date</h2>
