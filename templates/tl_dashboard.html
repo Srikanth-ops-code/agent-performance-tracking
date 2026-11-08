@@ -31,10 +31,10 @@
 </script>
 {% if mode == 'team' %}
 <div class="kpi-grid">
+  <div class="kpi-card"><span>Active agents</span><strong>{{ team.agent_count }}</strong><small>Assigned to you</small></div>
   <div class="kpi-card"><span>Team calls</span><strong>{{ "{:,}".format(team.total_calls) }}</strong><small>Selected-period total</small></div>
   <div class="kpi-card"><span>Average calls / working day</span><strong>{{ team.avg_calls }}</strong><small>{{ team.working_days }} agent working days</small></div>
   <div class="kpi-card"><span>Average approvals / working day</span><strong>{{ team.avg_approvals }}</strong><small>{{ team.working_days }} agent working days</small></div>
-  <div class="kpi-card"><span>Active agents</span><strong>{{ team.agent_count }}</strong><small>Assigned to you</small></div>
   <div class="kpi-card"><span>Approval rate</span><strong>{{ team.appr_pct }}<i>%</i></strong><small>Team weighted rate</small></div>
   <div class="kpi-card"><span>Error rate</span><strong>{{ team.err_pct }}<i>%</i></strong><small>Team weighted rate</small></div>
 </div>
