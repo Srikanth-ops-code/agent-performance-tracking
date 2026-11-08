@@ -148,16 +148,26 @@ def my_agents():
 
 
 def working_days_between(agent_id, start_date, end_date):
-    """Count distinct dates with a saved daily performance entry."""
+    """Count entered work dates, excluding only dates the agent marked Week-off or Leave."""
     if end_date < start_date:
         return []
-    return sorted({
+
+    entered_dates = {
         entry_date for (entry_date,) in db.session.query(DailyEntry.entry_date).filter(
             DailyEntry.agent_id == agent_id,
             DailyEntry.entry_date >= start_date,
             DailyEntry.entry_date <= end_date
         ).distinct().all()
-    })
+    }
+    marked_off_dates = {
+        off_date for (off_date,) in db.session.query(Roster.off_date).filter(
+            Roster.agent_id == agent_id,
+            Roster.off_date >= start_date,
+            Roster.off_date <= end_date,
+            Roster.roster_type.in_(("weekoff", "leave"))
+        ).distinct().all()
+    }
+    return sorted(entered_dates - marked_off_dates)
 
 
 def selected_period():
