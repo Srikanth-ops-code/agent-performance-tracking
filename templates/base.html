@@ -19,6 +19,7 @@
         <a href="{{ url_for('admin_roster') }}">▦ &nbsp; Week-off roster</a>
       {% elif current_user.role == 'tl' %}
         <a href="{{ url_for('tl_team') }}">▥ &nbsp; Team overview</a>
+        <a href="{{ url_for('tl_error_spreadsheets') }}">▤ &nbsp; Upload Error Spreadsheet</a>
         <a href="{{ url_for('export_team') }}">⇩ &nbsp; Export Excel</a>
       {% else %}
         <a href="{{ url_for('agent_dashboard') }}">▥ &nbsp; My dashboard</a>
