@@ -3,23 +3,37 @@
 {% block heading %}Error Management Spreadsheets{% endblock %}
 {% block content %}
 <div class="intro-row">
-  <p class="muted">Add the Google Sheets or Excel Online link your agents should use for each reporting month. Saving another link for the same month updates the existing one.</p>
+  <p class="muted">Add the Google Sheets or Excel Online link your agents should use for each reporting month. You can edit or delete any link saved by your team.</p>
   <a class="text-button" href="{{ url_for('tl_team') }}">← Back to team</a>
 </div>
 <div class="panel narrow">
-  <div class="panel-head"><div><span class="eyebrow">TEAM RESOURCE</span><h2>Upload spreadsheet link</h2></div></div>
-  <form method="post" class="form-grid">
-    <label>Database entry month<input type="month" name="month" required></label>
-    <label class="span-two">Google Sheets / Excel spreadsheet link<input type="url" name="spreadsheet_url" placeholder="https://..." required></label>
-    <div class="span-two"><button class="button">Save spreadsheet</button></div>
+  <div class="panel-head"><div><span class="eyebrow">TEAM RESOURCE</span><h2>{% if editing %}Edit spreadsheet link{% else %}Upload spreadsheet link{% endif %}</h2></div></div>
+  <form method="post" action="{% if editing %}{{ url_for('edit_error_spreadsheet', spreadsheet_id=editing.id) }}{% else %}{{ url_for('tl_error_spreadsheets') }}{% endif %}" class="form-grid">
+    <label>Database entry month<input type="month" name="month" value="{{ editing.month if editing else '' }}" required></label>
+    <label class="span-two">Google Sheets / Excel spreadsheet link<input type="url" name="spreadsheet_url" value="{{ editing.spreadsheet_url if editing else '' }}" placeholder="https://..." required></label>
+    <div class="span-two actions">
+      <button class="button">{% if editing %}Save changes{% else %}Save spreadsheet{% endif %}</button>
+      {% if editing %}<a class="button button-secondary" href="{{ url_for('tl_error_spreadsheets') }}">Cancel edit</a>{% endif %}
+    </div>
   </form>
   <p class="hint">Use a share link that your agents have permission to open. The link will be visible only to agents assigned to your team.</p>
 </div>
 <div class="panel">
   <div class="panel-head"><div><span class="eyebrow">SAVED RESOURCES</span><h2>Monthly spreadsheets</h2></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Month</th><th>Spreadsheet</th><th>Action</th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>Month</th><th>Spreadsheet</th><th>Actions</th></tr></thead><tbody>
   {% for item in spreadsheets %}
-    <tr><td><strong>{{ item.month }}</strong></td><td><a class="text-button" href="{{ item.spreadsheet_url }}" target="_blank" rel="noopener noreferrer">Open spreadsheet ↗</a></td><td><span class="muted">Edit by saving a new link for this month</span></td></tr>
+    <tr>
+      <td><strong>{{ item.month }}</strong></td>
+      <td><a class="text-button" href="{{ item.spreadsheet_url }}" target="_blank" rel="noopener noreferrer">Open spreadsheet ↗</a></td>
+      <td>
+        <div class="actions">
+          <a class="button button-secondary" href="{{ url_for('tl_error_spreadsheets', edit=item.id) }}">Edit</a>
+          <form method="post" action="{{ url_for('delete_error_spreadsheet', spreadsheet_id=item.id) }}">
+            <button class="button button-ghost" type="submit" data-confirm="Delete the spreadsheet link for {{ item.month }}? Agents on your team will no longer see it.">Delete</button>
+          </form>
+        </div>
+      </td>
+    </tr>
   {% else %}<tr><td colspan="3" class="empty">No error management spreadsheets have been added yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
