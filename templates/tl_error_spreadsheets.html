@@ -11,13 +11,13 @@
   <form method="post" enctype="multipart/form-data" action="{% if editing %}{{ url_for('edit_error_spreadsheet', spreadsheet_id=editing.id) }}{% else %}{{ url_for('tl_error_spreadsheets') }}{% endif %}" class="form-grid">
     <label>Database entry month<input type="month" name="month" value="{{ editing.month if editing else '' }}" required></label>
     <label class="span-two">Google Sheets URL (optional)<input type="url" name="spreadsheet_url" value="{{ editing.spreadsheet_url if editing and editing.spreadsheet_url else '' }}" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
-    <label class="span-two">Or upload Excel / CSV file<input type="file" name="spreadsheet_file" accept=".xlsx,.csv"></label>
+    <label class="span-two">Or upload Excel / CSV file<input type="file" name="spreadsheet_file" accept=".xlsx,.xls,.xlsm,.csv,.docx"></label>
     <div class="span-two actions">
       <button class="button">{% if editing %}Import and update records{% else %}Import spreadsheet{% endif %}</button>
       {% if editing %}<a class="button button-secondary" href="{{ url_for('tl_error_spreadsheets') }}">Cancel</a>{% endif %}
     </div>
   </form>
-  <p class="hint">Use one source per month. Google Sheets must be shared as “Anyone with the link — Viewer” so the app can read it. Excel uploads must be .xlsx; CSV files are also supported. Required column headers: Agent Username, Error ID, Error Reason. Common header variations are accepted.</p>
+  <p class="hint">Use one source per month. Google Sheets must be shared as “Anyone with the link — Viewer” so the app can read it. SharePoint files downloaded to your computer can be uploaded here. Supported formats: .xlsx, .xls, .xlsm, .csv, and .docx (DOCX must contain a table). Required columns: Date, Emp ID, Agent Name, UUID, error_category. Other columns are ignored. The Date values must belong to the selected month.</p>
 </div>
 <div class="panel">
   <div class="panel-head"><div><span class="eyebrow">IMPORTED DATABASE</span><h2>Monthly error imports</h2></div></div>
