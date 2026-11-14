@@ -1,7 +1,11 @@
 import os
+import csv
+import re
 import calendar as cal
 from datetime import date, datetime
 from functools import wraps
+from urllib.parse import urlparse, parse_qs
+from urllib.request import Request, urlopen
 
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -10,7 +14,7 @@ from flask_login import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import UniqueConstraint, inspect
-from io import BytesIO
+from io import BytesIO, StringIO
 from openpyxl import Workbook, load_workbook
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -30,6 +34,7 @@ else:
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -104,6 +109,21 @@ class ErrorSpreadsheet(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     team_lead = db.relationship("User")
     __table_args__ = (UniqueConstraint("tl_id", "month", name="uq_tl_error_spreadsheet_month"),)
+
+
+class AgentError(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    source_id = db.Column(db.Integer, db.ForeignKey("error_spreadsheet.id"), nullable=False)
+    tl_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    agent_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    month = db.Column(db.String(7), nullable=False)
+    error_id = db.Column(db.String(100), nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    agent = db.relationship("User", foreign_keys=[agent_id])
+    team_lead = db.relationship("User", foreign_keys=[tl_id])
+    source = db.relationship("ErrorSpreadsheet", backref=db.backref("errors", cascade="all, delete-orphan"))
+    __table_args__ = (UniqueConstraint("source_id", "agent_id", "error_id", name="uq_source_agent_error"),)
 
 
 class Target(db.Model):
@@ -606,6 +626,164 @@ def save_entry():
 
 
 # -------------------------- ERROR MANAGEMENT -------------------------------
+def normalize_error_header(value):
+    return re.sub(r"[^a-z0-9]", "", str(value or "").strip().lower())
+
+
+def google_sheet_csv_url(sheet_url):
+    parsed = urlparse(sheet_url)
+    if parsed.scheme != "https" or parsed.netloc.lower() not in ("docs.google.com", "www.docs.google.com"):
+        raise ValueError("Use a Google Sheets URL or upload an Excel/CSV file.")
+    match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", parsed.path)
+    if not match:
+        raise ValueError("The Google Sheets URL is not valid.")
+    sheet_id = match.group(1)
+    gid = parse_qs(parsed.query).get("gid", ["0"])[0]
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+
+def read_error_rows(file_bytes, filename, month):
+    extension = os.path.splitext(filename.lower())[1]
+    if extension == ".csv":
+        text_data = file_bytes.decode("utf-8-sig")
+        reader = csv.DictReader(StringIO(text_data))
+        raw_rows = list(reader)
+    elif extension == ".xlsx":
+        workbook = load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)
+        worksheet = workbook.active
+        values = worksheet.iter_rows(values_only=True)
+        headers = next(values, None)
+        if not headers:
+            raise ValueError("The spreadsheet is empty.")
+        raw_rows = [
+            {str(headers[i] or ""): row[i] if i < len(row) else None for i in range(len(headers))}
+            for row in values
+        ]
+        workbook.close()
+    else:
+        raise ValueError("Upload an .xlsx or .csv file.")
+
+    if not raw_rows:
+        raise ValueError("No data rows were found in the spreadsheet.")
+
+    headers = {normalize_error_header(key): key for key in raw_rows[0].keys()}
+    username_key = next((headers[key] for key in (
+        "username", "agentusername", "agentuser", "login", "agentlogin"
+    ) if key in headers), None)
+    error_key = next((headers[key] for key in (
+        "errorid", "errorcode", "errornumber", "qaerrorid"
+    ) if key in headers), None)
+    reason_key = next((headers[key] for key in (
+        "errorreason", "reason", "errordescription", "description", "remarks"
+    ) if key in headers), None)
+
+    if not username_key or not error_key or not reason_key:
+        raise ValueError(
+            "Required columns not found. Include headers for Agent Username, Error ID, and Error Reason."
+        )
+
+    parsed = []
+    for row_number, row in enumerate(raw_rows, start=2):
+        username = str(row.get(username_key) or "").strip()
+        error_id = str(row.get(error_key) or "").strip()
+        reason = str(row.get(reason_key) or "").strip()
+        if not username and not error_id and not reason:
+            continue
+        if not username or not error_id or not reason:
+            raise ValueError(f"Row {row_number} is missing a username, Error ID, or Error Reason.")
+        parsed.append((username, error_id, reason))
+    if not parsed:
+        raise ValueError("No complete error records were found.")
+    return parsed
+
+
+def fetch_google_sheet(sheet_url):
+    export_url = google_sheet_csv_url(sheet_url)
+    req = Request(export_url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urlopen(req, timeout=25) as response:
+            content = response.read(10 * 1024 * 1024 + 1)
+    except Exception as exc:
+        raise ValueError(
+            "Could not read the Google Sheet. Set sharing to Anyone with the link - Viewer, then try again."
+        ) from exc
+    if len(content) > 10 * 1024 * 1024:
+        raise ValueError("The Google Sheet is larger than the 10 MB import limit.")
+    return content
+
+
+def import_agent_errors(tl_id, month, parsed_rows, source):
+    agents = User.query.filter_by(role="agent", tl_id=tl_id).all()
+    agents_by_username = {agent.username.strip().casefold(): agent for agent in agents}
+    imported = 0
+    skipped_usernames = set()
+    seen = set()
+
+    # Replace this source's previous import only after the new file has parsed.
+    AgentError.query.filter_by(source_id=source.id).delete(synchronize_session=False)
+    for username, error_id, reason in parsed_rows:
+        agent = agents_by_username.get(username.casefold())
+        if not agent:
+            skipped_usernames.add(username)
+            continue
+        key = (agent.id, error_id.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        db.session.add(AgentError(
+            source_id=source.id,
+            tl_id=tl_id,
+            agent_id=agent.id,
+            month=month,
+            error_id=error_id[:100],
+            reason=reason
+        ))
+        imported += 1
+
+    if not imported:
+        db.session.rollback()
+        raise ValueError("No rows matched active or assigned agents. Check the Agent Username values.")
+    db.session.commit()
+    return imported, sorted(skipped_usernames)
+
+
+def save_error_spreadsheet_import(tl_id, month, uploaded_file=None, spreadsheet_url="", existing=None):
+    datetime.strptime(month, "%Y-%m")
+    if uploaded_file and uploaded_file.filename:
+        filename = uploaded_file.filename
+        if len(filename) > 255:
+            raise ValueError("The uploaded filename is too long.")
+        file_bytes = uploaded_file.read(10 * 1024 * 1024 + 1)
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise ValueError("The file is larger than the 10 MB import limit.")
+        parsed_rows = read_error_rows(file_bytes, filename, month)
+        source_url = ""
+        source_name = filename
+    elif spreadsheet_url:
+        if len(spreadsheet_url) > 1000:
+            raise ValueError("The Google Sheets URL is too long.")
+        file_bytes = fetch_google_sheet(spreadsheet_url)
+        parsed_rows = read_error_rows(file_bytes, "sheet.csv", month)
+        source_url = spreadsheet_url
+        source_name = "Google Sheets"
+    else:
+        raise ValueError("Choose an Excel/CSV file or enter a Google Sheets URL.")
+
+    item = existing or ErrorSpreadsheet.query.filter_by(tl_id=tl_id, month=month).first()
+    if item is None:
+        item = ErrorSpreadsheet(tl_id=tl_id, month=month, spreadsheet_url=source_url,
+                                source_name=source_name)
+        db.session.add(item)
+        db.session.flush()
+    else:
+        item.month = month
+        item.spreadsheet_url = source_url
+        item.source_name = source_name
+
+    imported, skipped = import_agent_errors(tl_id, month, parsed_rows, item)
+    return item, imported, skipped
+
+
 @app.route("/tl/error-spreadsheets", methods=["GET", "POST"])
 @login_required
 @role_required("tl")
@@ -613,26 +791,21 @@ def tl_error_spreadsheets():
     if request.method == "POST":
         try:
             month = request.form["month"].strip()
-            datetime.strptime(month, "%Y-%m")
-            spreadsheet_url = request.form["spreadsheet_url"].strip()
-            if not spreadsheet_url.startswith("https://") or len(spreadsheet_url) > 1000:
-                raise ValueError
-            item = ErrorSpreadsheet.query.filter_by(
-                tl_id=current_user.id, month=month
-            ).first()
-            if item:
-                item.spreadsheet_url = spreadsheet_url
-            else:
-                db.session.add(ErrorSpreadsheet(
-                    tl_id=current_user.id,
-                    month=month,
-                    spreadsheet_url=spreadsheet_url
-                ))
-            db.session.commit()
-            flash("Error management spreadsheet saved for " + month + ".", "success")
-        except (KeyError, ValueError):
+            save_error_spreadsheet_import(
+                current_user.id, month,
+                uploaded_file=request.files.get("spreadsheet_file"),
+                spreadsheet_url=request.form.get("spreadsheet_url", "").strip()
+            )
+            item = ErrorSpreadsheet.query.filter_by(tl_id=current_user.id, month=month).first()
+            count = AgentError.query.filter_by(source_id=item.id).count()
+            flash(f"Imported {count} error records for {month}.", "success")
+        except (KeyError, ValueError) as exc:
             db.session.rollback()
-            flash("Enter a valid month and a secure HTTPS spreadsheet link.", "danger")
+            flash(str(exc) or "Please provide a valid month and spreadsheet.", "danger")
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Error importing TL spreadsheet")
+            flash("The spreadsheet could not be imported. Check its format and try again.", "danger")
         return redirect(url_for("tl_error_spreadsheets"))
 
     edit_id = request.args.get("edit", type=int)
@@ -642,7 +815,7 @@ def tl_error_spreadsheets():
             id=edit_id, tl_id=current_user.id
         ).first()
         if not editing:
-            flash("That spreadsheet link was not found in your team.", "danger")
+            flash("That spreadsheet was not found in your team.", "danger")
             return redirect(url_for("tl_error_spreadsheets"))
     spreadsheets = ErrorSpreadsheet.query.filter_by(
         tl_id=current_user.id
@@ -656,29 +829,33 @@ def tl_error_spreadsheets():
 def edit_error_spreadsheet(spreadsheet_id):
     item = ErrorSpreadsheet.query.filter_by(id=spreadsheet_id, tl_id=current_user.id).first()
     if not item:
-        flash("That spreadsheet link was not found in your team.", "danger")
+        flash("That spreadsheet was not found in your team.", "danger")
         return redirect(url_for("tl_error_spreadsheets"))
     try:
         month = request.form["month"].strip()
-        datetime.strptime(month, "%Y-%m")
-        spreadsheet_url = request.form["spreadsheet_url"].strip()
-        if not spreadsheet_url.startswith("https://") or len(spreadsheet_url) > 1000:
-            raise ValueError
         duplicate = ErrorSpreadsheet.query.filter(
             ErrorSpreadsheet.tl_id == current_user.id,
             ErrorSpreadsheet.month == month,
             ErrorSpreadsheet.id != item.id
         ).first()
         if duplicate:
-            flash("A spreadsheet already exists for that month. Edit that record instead.", "danger")
-            return redirect(url_for("tl_error_spreadsheets", edit=item.id))
-        item.month = month
-        item.spreadsheet_url = spreadsheet_url
-        db.session.commit()
-        flash("Spreadsheet link updated successfully.", "success")
-    except (KeyError, ValueError):
+            raise ValueError("A spreadsheet already exists for that month.")
+        save_error_spreadsheet_import(
+            current_user.id, month,
+            uploaded_file=request.files.get("spreadsheet_file"),
+            spreadsheet_url=request.form.get("spreadsheet_url", "").strip(),
+            existing=item
+        )
+        count = AgentError.query.filter_by(source_id=item.id).count()
+        flash(f"Updated {month}: imported {count} error records.", "success")
+    except (KeyError, ValueError) as exc:
         db.session.rollback()
-        flash("Enter a valid month and a secure HTTPS spreadsheet link.", "danger")
+        flash(str(exc) or "Please provide a valid month and spreadsheet.", "danger")
+        return redirect(url_for("tl_error_spreadsheets", edit=item.id))
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Error updating TL spreadsheet")
+        flash("The spreadsheet could not be imported. Check its format and try again.", "danger")
         return redirect(url_for("tl_error_spreadsheets", edit=item.id))
     return redirect(url_for("tl_error_spreadsheets"))
 
@@ -689,11 +866,11 @@ def edit_error_spreadsheet(spreadsheet_id):
 def delete_error_spreadsheet(spreadsheet_id):
     item = ErrorSpreadsheet.query.filter_by(id=spreadsheet_id, tl_id=current_user.id).first()
     if not item:
-        flash("That spreadsheet link was not found in your team.", "danger")
+        flash("That spreadsheet was not found in your team.", "danger")
     else:
         db.session.delete(item)
         db.session.commit()
-        flash("Spreadsheet link deleted.", "success")
+        flash("Spreadsheet and its imported error records deleted.", "success")
     return redirect(url_for("tl_error_spreadsheets"))
 
 
@@ -701,12 +878,17 @@ def delete_error_spreadsheet(spreadsheet_id):
 @login_required
 @role_required("agent")
 def agent_error_management():
-    spreadsheets = []
-    if current_user.tl_id:
-        spreadsheets = ErrorSpreadsheet.query.filter_by(
-            tl_id=current_user.tl_id
-        ).order_by(ErrorSpreadsheet.month.desc()).all()
-    return render_template("agent_error_management.html", spreadsheets=spreadsheets)
+    records = AgentError.query.filter_by(agent_id=current_user.id).order_by(
+        AgentError.month.desc(), AgentError.error_id.asc()
+    ).all()
+    grouped = {}
+    for record in records:
+        grouped.setdefault(record.month, []).append(record)
+    errors_by_month = [
+        (month, datetime.strptime(month, "%Y-%m").strftime("%B %Y"), rows)
+        for month, rows in grouped.items()
+    ]
+    return render_template("agent_error_management.html", errors_by_month=errors_by_month)
 
 
 # -------------------------------- TEAM LEAD ---------------------------------
@@ -875,6 +1057,11 @@ def initialize_database():
             connection.exec_driver_sql(
                 "ALTER TABLE roster ADD COLUMN agent_entered BOOLEAN NOT NULL DEFAULT FALSE"
             )
+
+    spreadsheet_columns = {column["name"] for column in inspect(db.engine).get_columns("error_spreadsheet")}
+    if "source_name" not in spreadsheet_columns:
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE error_spreadsheet ADD COLUMN source_name VARCHAR(255)")
 
     if not User.query.filter_by(username="admin").first():
         admin = User(
