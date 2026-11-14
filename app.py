@@ -792,14 +792,14 @@ def tl_error_spreadsheets():
     if request.method == "POST":
         try:
             month = request.form["month"].strip()
-            save_error_spreadsheet_import(
+            item, imported, skipped = save_error_spreadsheet_import(
                 current_user.id, month,
                 uploaded_file=request.files.get("spreadsheet_file"),
                 spreadsheet_url=request.form.get("spreadsheet_url", "").strip()
             )
-            item = ErrorSpreadsheet.query.filter_by(tl_id=current_user.id, month=month).first()
-            count = AgentError.query.filter_by(source_id=item.id).count()
-            flash(f"Imported {count} error records for {month}.", "success")
+            flash(f"Imported {imported} error records for {month}.", "success")
+            if skipped:
+                flash("Rows skipped because these usernames are not assigned to your team: " + ", ".join(skipped[:10]), "warning")
         except (KeyError, ValueError) as exc:
             db.session.rollback()
             flash(str(exc) or "Please provide a valid month and spreadsheet.", "danger")
@@ -841,14 +841,15 @@ def edit_error_spreadsheet(spreadsheet_id):
         ).first()
         if duplicate:
             raise ValueError("A spreadsheet already exists for that month.")
-        save_error_spreadsheet_import(
+        _, imported, skipped = save_error_spreadsheet_import(
             current_user.id, month,
             uploaded_file=request.files.get("spreadsheet_file"),
             spreadsheet_url=request.form.get("spreadsheet_url", "").strip(),
             existing=item
         )
-        count = AgentError.query.filter_by(source_id=item.id).count()
-        flash(f"Updated {month}: imported {count} error records.", "success")
+        flash(f"Updated {month}: imported {imported} error records.", "success")
+        if skipped:
+            flash("Rows skipped because these usernames are not assigned to your team: " + ", ".join(skipped[:10]), "warning")
     except (KeyError, ValueError) as exc:
         db.session.rollback()
         flash(str(exc) or "Please provide a valid month and spreadsheet.", "danger")
