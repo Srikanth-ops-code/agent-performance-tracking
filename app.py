@@ -16,6 +16,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import UniqueConstraint, inspect
 from io import BytesIO, StringIO
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils.datetime import from_excel
+import xlrd
+from docx import Document
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
@@ -120,6 +123,9 @@ class AgentError(db.Model):
     month = db.Column(db.String(7), nullable=False)
     error_id = db.Column(db.String(100), nullable=False)
     reason = db.Column(db.Text, nullable=False)
+    error_date = db.Column(db.Date, nullable=True)
+    agent_name = db.Column(db.String(150), nullable=True)
+    category = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     agent = db.relationship("User", foreign_keys=[agent_id])
     team_lead = db.relationship("User", foreign_keys=[tl_id])
@@ -631,10 +637,41 @@ def normalize_error_header(value):
     return re.sub(r"[^a-z0-9]", "", str(value or "").strip().lower())
 
 
+def parse_error_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return from_excel(value).date()
+        except Exception:
+            try:
+                return xlrd.xldate_as_datetime(value, 0).date()
+            except Exception:
+                pass
+    text_value = str(value or "").strip()
+    if not text_value:
+        return None
+    for fmt in (
+        "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
+        "%Y/%m/%d", "%d.%m.%Y", "%Y-%m-%d %H:%M:%S",
+        "%d/%m/%Y %H:%M:%S", "%d-%b-%Y", "%d %b %Y"
+    ):
+        try:
+            return datetime.strptime(text_value, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text_value.replace("Z", "+00:00")).date()
+    except ValueError:
+        raise ValueError("Could not read a Date value. Use a normal Excel date or DD/MM/YYYY / YYYY-MM-DD.")
+
+
 def google_sheet_csv_url(sheet_url):
     parsed = urlparse(sheet_url)
     if parsed.scheme != "https" or parsed.netloc.lower() not in ("docs.google.com", "www.docs.google.com"):
-        raise ValueError("Use a Google Sheets URL or upload an Excel/CSV file.")
+        raise ValueError("Use a Google Sheets URL or upload an Excel, CSV, or DOCX file.")
     match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", parsed.path)
     if not match:
         raise ValueError("The Google Sheets URL is not valid.")
@@ -643,56 +680,93 @@ def google_sheet_csv_url(sheet_url):
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
 
 
+def rows_from_matrix(matrix):
+    matrix = [list(row) for row in matrix]
+    while matrix and not any(str(cell or "").strip() for cell in matrix[0]):
+        matrix.pop(0)
+    if not matrix:
+        raise ValueError("The spreadsheet or document is empty.")
+    headers = [str(value or "").strip() for value in matrix[0]]
+    return [
+        {headers[i]: row[i] if i < len(row) else None for i in range(len(headers))}
+        for row in matrix[1:]
+    ]
+
+
 def read_error_rows(file_bytes, filename, month):
     extension = os.path.splitext(filename.lower())[1]
     if extension == ".csv":
         text_data = file_bytes.decode("utf-8-sig")
-        reader = csv.DictReader(StringIO(text_data))
-        raw_rows = list(reader)
-    elif extension == ".xlsx":
+        reader = csv.reader(StringIO(text_data))
+        raw_rows = rows_from_matrix(reader)
+    elif extension in (".xlsx", ".xlsm"):
         workbook = load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)
         worksheet = workbook.active
-        values = worksheet.iter_rows(values_only=True)
-        headers = next(values, None)
-        if not headers:
-            raise ValueError("The spreadsheet is empty.")
-        raw_rows = [
-            {str(headers[i] or ""): row[i] if i < len(row) else None for i in range(len(headers))}
-            for row in values
-        ]
+        raw_rows = rows_from_matrix(worksheet.iter_rows(values_only=True))
         workbook.close()
+    elif extension == ".xls":
+        workbook = xlrd.open_workbook(file_contents=file_bytes)
+        worksheet = workbook.sheet_by_index(0)
+        raw_rows = rows_from_matrix(
+            worksheet.row_values(row_index) for row_index in range(worksheet.nrows)
+        )
+    elif extension == ".docx":
+        document = Document(BytesIO(file_bytes))
+        if not document.tables:
+            raise ValueError("The DOCX file must contain a table with the required column headers.")
+        table = document.tables[0]
+        raw_rows = rows_from_matrix(
+            [[cell.text.strip() for cell in row.cells] for row in table.rows]
+        )
     else:
-        raise ValueError("Upload an .xlsx or .csv file.")
+        raise ValueError("Supported uploads: .xlsx, .xlsm, .xls, .csv, and .docx files.")
 
     if not raw_rows:
-        raise ValueError("No data rows were found in the spreadsheet.")
+        raise ValueError("No data rows were found in the file.")
 
     headers = {normalize_error_header(key): key for key in raw_rows[0].keys()}
+    date_key = next((headers[key] for key in ("date", "errordate", "createddate") if key in headers), None)
     username_key = next((headers[key] for key in (
-        "username", "agentusername", "agentuser", "login", "agentlogin"
+        "empid", "employeeid", "employeeusername", "username", "agentusername", "agentuser", "login", "agentlogin"
     ) if key in headers), None)
-    error_key = next((headers[key] for key in (
-        "errorid", "errorcode", "errornumber", "qaerrorid"
+    name_key = next((headers[key] for key in ("agentname", "employeename", "fullname", "name") if key in headers), None)
+    uuid_key = next((headers[key] for key in (
+        "uuid", "errorid", "erroruuid", "errorcode", "errornumber", "qaerrorid"
     ) if key in headers), None)
-    reason_key = next((headers[key] for key in (
-        "errorreason", "reason", "errordescription", "description", "remarks"
+    category_key = next((headers[key] for key in (
+        "errorcategory", "category", "errorreason", "reason", "errordescription", "description", "remarks"
     ) if key in headers), None)
 
-    if not username_key or not error_key or not reason_key:
+    if not all((date_key, username_key, name_key, uuid_key, category_key)):
         raise ValueError(
-            "Required columns not found. Include headers for Agent Username, Error ID, and Error Reason."
+            "Required columns not found. Include Date, Emp ID, Agent Name, UUID, and error_category."
         )
 
     parsed = []
     for row_number, row in enumerate(raw_rows, start=2):
-        username = str(row.get(username_key) or "").strip()
-        error_id = str(row.get(error_key) or "").strip()
-        reason = str(row.get(reason_key) or "").strip()
-        if not username and not error_id and not reason:
+        values = [row.get(key) for key in (date_key, username_key, name_key, uuid_key, category_key)]
+        if not any(str(value or "").strip() for value in values):
             continue
-        if not username or not error_id or not reason:
-            raise ValueError(f"Row {row_number} is missing a username, Error ID, or Error Reason.")
-        parsed.append((username, error_id, reason))
+        error_date = parse_error_date(row.get(date_key))
+        username = str(row.get(username_key) or "").strip()
+        agent_name = str(row.get(name_key) or "").strip()
+        error_id = str(row.get(uuid_key) or "").strip()
+        category = str(row.get(category_key) or "").strip()
+        if not all((error_date, username, agent_name, error_id, category)):
+            raise ValueError(
+                f"Row {row_number} is missing Date, Emp ID, Agent Name, UUID, or error_category."
+            )
+        if error_date.strftime("%Y-%m") != month:
+            raise ValueError(
+                f"Row {row_number} has date {error_date.isoformat()}, which is outside the selected month {month}."
+            )
+        parsed.append({
+            "error_date": error_date,
+            "username": username,
+            "agent_name": agent_name,
+            "error_id": error_id,
+            "category": category
+        })
     if not parsed:
         raise ValueError("No complete error records were found.")
     return parsed
@@ -722,12 +796,12 @@ def import_agent_errors(tl_id, month, parsed_rows, source):
 
     # Replace this source's previous import only after the new file has parsed.
     AgentError.query.filter_by(source_id=source.id).delete(synchronize_session=False)
-    for username, error_id, reason in parsed_rows:
-        agent = agents_by_username.get(username.casefold())
+    for row in parsed_rows:
+        agent = agents_by_username.get(row["username"].casefold())
         if not agent:
-            skipped_usernames.add(username)
+            skipped_usernames.add(row["username"])
             continue
-        key = (agent.id, error_id.casefold())
+        key = (agent.id, row["error_id"].casefold())
         if key in seen:
             continue
         seen.add(key)
@@ -736,14 +810,17 @@ def import_agent_errors(tl_id, month, parsed_rows, source):
             tl_id=tl_id,
             agent_id=agent.id,
             month=month,
-            error_id=error_id[:100],
-            reason=reason
+            error_id=row["error_id"][:100],
+            reason=row["category"],
+            error_date=row["error_date"],
+            agent_name=row["agent_name"][:150],
+            category=row["category"]
         ))
         imported += 1
 
     if not imported:
         db.session.rollback()
-        raise ValueError("No rows matched active or assigned agents. Check the Agent Username values.")
+        raise ValueError("No rows matched active or assigned agents. Check the Emp ID values against agent usernames.")
     db.session.commit()
     return imported, sorted(skipped_usernames)
 
@@ -768,7 +845,7 @@ def save_error_spreadsheet_import(tl_id, month, uploaded_file=None, spreadsheet_
         source_url = spreadsheet_url
         source_name = "Google Sheets"
     else:
-        raise ValueError("Choose an Excel/CSV file or enter a Google Sheets URL.")
+        raise ValueError("Choose an Excel/CSV/DOCX file or enter a Google Sheets URL.")
 
     item = existing or ErrorSpreadsheet.query.filter_by(tl_id=tl_id, month=month).first()
     if item is None:
@@ -881,7 +958,7 @@ def delete_error_spreadsheet(spreadsheet_id):
 @role_required("agent")
 def agent_error_management():
     records = AgentError.query.filter_by(agent_id=current_user.id).order_by(
-        AgentError.month.desc(), AgentError.error_id.asc()
+        AgentError.month.desc(), AgentError.error_date.desc(), AgentError.error_id.asc()
     ).all()
     grouped = {}
     for record in records:
@@ -1064,6 +1141,15 @@ def initialize_database():
     if "source_name" not in spreadsheet_columns:
         with db.engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE error_spreadsheet ADD COLUMN source_name VARCHAR(255)")
+
+    error_columns = {column["name"] for column in inspect(db.engine).get_columns("agent_error")}
+    with db.engine.begin() as connection:
+        if "error_date" not in error_columns:
+            connection.exec_driver_sql("ALTER TABLE agent_error ADD COLUMN error_date DATE")
+        if "agent_name" not in error_columns:
+            connection.exec_driver_sql("ALTER TABLE agent_error ADD COLUMN agent_name VARCHAR(150)")
+        if "category" not in error_columns:
+            connection.exec_driver_sql("ALTER TABLE agent_error ADD COLUMN category TEXT")
 
     if not User.query.filter_by(username="admin").first():
         admin = User(
