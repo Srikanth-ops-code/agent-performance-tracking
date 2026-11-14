@@ -3,7 +3,7 @@
 {% block heading %}My Error Management{% endblock %}
 {% block content %}
 <div class="intro-row">
-  <p class="muted">These are the error records imported by your Team Lead and assigned to your username.</p>
+  <p class="muted">These are the error records imported by your Team Lead and matched to your Emp ID.</p>
   <a class="text-button" href="{{ url_for('agent_roster') }}">← Back to week-offs</a>
 </div>
 {% for month, month_label, records in errors_by_month %}
@@ -12,13 +12,19 @@
     <div><span class="eyebrow">MONTHLY ERROR RECORDS</span><h2>{{ month_label }}</h2></div>
     <span class="muted">{{ records|length }} error{% if records|length != 1 %}s{% endif %}</span>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Error ID</th><th>Error Reason</th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>Date</th><th>Emp ID</th><th>Agent Name</th><th>UUID</th><th>error_category</th></tr></thead><tbody>
     {% for record in records %}
-    <tr><td><strong>{{ record.error_id }}</strong></td><td>{{ record.reason }}</td></tr>
+    <tr>
+      <td>{{ record.error_date.strftime("%d-%m-%Y") if record.error_date else record.month }}</td>
+      <td>{{ record.agent.username }}</td>
+      <td>{{ record.agent_name or record.agent.full_name }}</td>
+      <td><strong>{{ record.error_id }}</strong></td>
+      <td>{{ record.category or record.reason }}</td>
+    </tr>
     {% endfor %}
   </tbody></table></div>
 </div>
 {% else %}
-<div class="panel"><div class="empty">Your Team Lead has not imported any error records for your username yet.</div></div>
+<div class="panel"><div class="empty">Your Team Lead has not imported any error records for your Emp ID yet.</div></div>
 {% endfor %}
 {% endblock %}
