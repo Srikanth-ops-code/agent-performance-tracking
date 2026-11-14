@@ -1,17 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Error Management · Daily Tracker{% endblock %}
-{% block heading %}Error Management{% endblock %}
+{% block title %}My Error Management · Daily Tracker{% endblock %}
+{% block heading %}My Error Management{% endblock %}
 {% block content %}
 <div class="intro-row">
-  <p class="muted">Open the error management spreadsheet shared by your Team Lead.</p>
+  <p class="muted">These are the error records imported by your Team Lead and assigned to your username.</p>
   <a class="text-button" href="{{ url_for('agent_roster') }}">← Back to week-offs</a>
 </div>
+{% for month, month_label, records in errors_by_month %}
 <div class="panel">
-  <div class="panel-head"><div><span class="eyebrow">TEAM SPREADSHEETS</span><h2>Monthly error management files</h2></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Database entry month</th><th>Spreadsheet</th></tr></thead><tbody>
-  {% for item in spreadsheets %}
-    <tr><td><strong>{{ item.month }}</strong></td><td><a class="button button-secondary" href="{{ item.spreadsheet_url }}" target="_blank" rel="noopener noreferrer">Open Error Spreadsheet ↗</a></td></tr>
-  {% else %}<tr><td colspan="2" class="empty">Your Team Lead has not uploaded an error management spreadsheet yet.</td></tr>{% endfor %}
+  <div class="panel-head">
+    <div><span class="eyebrow">MONTHLY ERROR RECORDS</span><h2>{{ month_label }}</h2></div>
+    <span class="muted">{{ records|length }} error{% if records|length != 1 %}s{% endif %}</span>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Error ID</th><th>Error Reason</th></tr></thead><tbody>
+    {% for record in records %}
+    <tr><td><strong>{{ record.error_id }}</strong></td><td>{{ record.reason }}</td></tr>
+    {% endfor %}
   </tbody></table></div>
 </div>
+{% else %}
+<div class="panel"><div class="empty">Your Team Lead has not imported any error records for your username yet.</div></div>
+{% endfor %}
 {% endblock %}
