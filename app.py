@@ -60,6 +60,7 @@ class User(UserMixin, db.Model):
     active = db.Column(db.Boolean, default=True, nullable=False)
     email = db.Column(db.String(254), unique=True, nullable=True)
     email_verified = db.Column(db.Boolean, default=False, nullable=False)
+    email_is_personal = db.Column(db.Boolean, default=False, nullable=False)
 
     team_lead = db.relationship("User", remote_side=[id], backref="team_members", uselist=False)
 
@@ -404,6 +405,7 @@ def verify_personal_email():
     else:
         current_user.email = otp.email
         current_user.email_verified = True
+        current_user.email_is_personal = True
         db.session.delete(otp)
         db.session.commit()
         session.pop("email_otp_pending", None)
@@ -1333,6 +1335,8 @@ def initialize_database():
             connection.exec_driver_sql('ALTER TABLE "user" ADD COLUMN email VARCHAR(254)')
         if "email_verified" not in user_columns:
             connection.exec_driver_sql('ALTER TABLE "user" ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE')
+        if "email_is_personal" not in user_columns:
+            connection.exec_driver_sql('ALTER TABLE "user" ADD COLUMN email_is_personal BOOLEAN NOT NULL DEFAULT FALSE')
         connection.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_user_verified_email ON "user"(email)')
 
     # Add the roster type to existing deployments without losing saved dates.
