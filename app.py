@@ -70,17 +70,6 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
 
-class EmailVerificationCode(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    email = db.Column(db.String(254), nullable=False)
-    purpose = db.Column(db.String(30), nullable=False)
-    code_hash = db.Column(db.String(64), nullable=False)
-    expires_at = db.Column(db.DateTime, nullable=False)
-    attempts = db.Column(db.Integer, nullable=False, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-
 class DailyEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agent_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -282,46 +271,6 @@ def agent_kpis(agent_id, start, end):
 
 
 # -------------------------------- AUTH --------------------------------------
-def send_verification_email(email, code, purpose):
-    mail_user = os.environ.get("MAIL_USERNAME")
-    mail_password = os.environ.get("MAIL_PASSWORD")
-    if not mail_user or not mail_password:
-        raise RuntimeError("Email sending is not configured. Set MAIL_USERNAME and MAIL_PASSWORD.")
-    message = EmailMessage()
-    message["Subject"] = "Your Daily Tracker verification code"
-    message["From"] = os.environ.get("MAIL_DEFAULT_SENDER", mail_user)
-    message["To"] = email
-    action = "verify your company email address" if purpose == "link_email" else "reset your Daily Tracker password"
-    message.set_content(
-        f"Hello,\n\nYour code to {action} is: {code}\n\n"
-        "This code expires in 10 minutes. Do not share it with anyone.\n\nDaily Performance Tracker"
-    )
-    server = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
-    port = int(os.environ.get("MAIL_PORT", "587"))
-    with smtplib.SMTP(server, port, timeout=20) as smtp:
-        smtp.starttls()
-        smtp.login(mail_user, mail_password)
-        smtp.send_message(message)
-
-
-def issue_email_code(user, email, purpose):
-    EmailVerificationCode.query.filter_by(user_id=user.id, purpose=purpose).delete()
-    code = f"{secrets.randbelow(1000000):06d}"
-    record = EmailVerificationCode(
-        user_id=user.id, email=email, purpose=purpose,
-        code_hash=hashlib.sha256(code.encode()).hexdigest(),
-        expires_at=datetime.utcnow() + timedelta(minutes=10), attempts=0
-    )
-    db.session.add(record)
-    db.session.commit()
-    try:
-        send_verification_email(email, code, purpose)
-    except Exception:
-        db.session.delete(record)
-        db.session.commit()
-        raise
-
-
 @app.route("/")
 def home():
     if not current_user.is_authenticated:
@@ -348,99 +297,23 @@ def login():
     return render_template("login.html")
 
 
-@app.route("/agent/email-verification", methods=["POST"])
+@app.route("/agent/company-email", methods=["POST"])
 @login_required
 @role_required("agent")
-def agent_email_verification():
-    action = request.form.get("action")
-    if action == "send":
-        email = request.form.get("email", "").strip().lower()
-        if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email):
-            flash("Enter a valid company email address.", "danger")
+def agent_company_email():
+    email = request.form.get("email", "").strip().lower()
+    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", email):
+        flash("Enter a valid company email address.", "danger")
+    else:
+        owner = User.query.filter(User.email == email, User.id != current_user.id).first()
+        if owner:
+            flash("That email address is already linked to another account.", "danger")
         else:
-            owner = User.query.filter(User.email == email, User.id != current_user.id).first()
-            if owner:
-                flash("That email address is already linked to another account.", "danger")
-            else:
-                try:
-                    issue_email_code(current_user, email, "link_email")
-                    session["pending_agent_email"] = email
-                    flash("Verification code sent. Enter it below to verify your company email.", "success")
-                except Exception:
-                    app.logger.exception("Could not send company email verification")
-                    flash("Email could not be sent. Please contact your administrator.", "danger")
-    elif action == "verify":
-        email = session.get("pending_agent_email")
-        code = request.form.get("code", "").strip()
-        record = EmailVerificationCode.query.filter_by(
-            user_id=current_user.id, purpose="link_email", email=email
-        ).order_by(EmailVerificationCode.created_at.desc()).first() if email else None
-        if not record or record.expires_at < datetime.utcnow() or record.attempts >= 5:
-            flash("The code has expired. Request a new code.", "danger")
-        else:
-            record.attempts += 1
-            expected = record.code_hash
-            actual = hashlib.sha256(code.encode()).hexdigest()
-            if secrets.compare_digest(expected, actual):
-                current_user.email = email
-                current_user.email_verified = True
-                db.session.delete(record)
-                db.session.commit()
-                session.pop("pending_agent_email", None)
-                flash("Company email verified successfully. You can now use Forgot Password.", "success")
-            else:
-                db.session.commit()
-                flash("Incorrect verification code. Please try again.", "danger")
-    return redirect(url_for("home"))
-
-
-@app.route("/forgot-password", methods=["GET", "POST"])
-def forgot_password():
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
-        session.pop("password_reset_user_id", None)
-        user = User.query.filter_by(email=email, email_verified=True, role="agent", active=True).first()
-        if user:
-            try:
-                issue_email_code(user, email, "reset_password")
-                session["password_reset_user_id"] = user.id
-                session["password_reset_email"] = email
-            except Exception:
-                app.logger.exception("Could not send password reset email")
-        flash("If an active agent account has this verified email address, a reset code has been sent.", "success")
-        return redirect(url_for("reset_password"))
-    return render_template("forgot_password.html")
-
-
-@app.route("/reset-password", methods=["GET", "POST"])
-def reset_password():
-    user_id = session.get("password_reset_user_id")
-    email = session.get("password_reset_email")
-    if request.method == "POST":
-        user = db.session.get(User, user_id) if user_id else None
-        code = request.form.get("code", "").strip()
-        password = request.form.get("new_password", "")
-        confirm = request.form.get("confirm_password", "")
-        record = EmailVerificationCode.query.filter_by(
-            user_id=user_id, email=email, purpose="reset_password"
-        ).order_by(EmailVerificationCode.created_at.desc()).first() if user_id else None
-        if not user or not record or record.expires_at < datetime.utcnow() or record.attempts >= 5:
-            flash("The reset code is invalid or expired. Please start again.", "danger")
-        elif len(password) < 8 or password != confirm:
-            flash("Passwords must match and contain at least 8 characters.", "danger")
-        else:
-            record.attempts += 1
-            if secrets.compare_digest(record.code_hash, hashlib.sha256(code.encode()).hexdigest()):
-                user.set_password(password)
-                db.session.delete(record)
-                db.session.commit()
-                session.pop("password_reset_user_id", None)
-                session.pop("password_reset_email", None)
-                flash("Password reset successfully. Please sign in.", "success")
-                return redirect(url_for("login"))
+            current_user.email = email
+            current_user.email_verified = True
             db.session.commit()
-            flash("Incorrect verification code.", "danger")
-    return render_template("reset_password.html", reset_email=email)
+            flash("Company email saved to your agent profile.", "success")
+    return redirect(url_for("home"))
 
 
 @app.route("/logout", methods=["POST"])
