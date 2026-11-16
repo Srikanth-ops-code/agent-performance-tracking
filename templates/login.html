@@ -11,7 +11,7 @@
       <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
       <button class="button full">Sign in <span>→</span></button>
     </form>
-    <div class="login-note">If you need access, contact your administrator for your login credentials.</div>
+    <div class="login-note"><a href="{{ url_for('forgot_password') }}">Forgot password?</a><br>If you need access, contact your administrator for your login credentials.</div>
   </div>
 </div>
 {% endblock %}
