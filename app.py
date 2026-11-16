@@ -1281,10 +1281,10 @@ def initialize_database():
     user_columns = {column["name"] for column in inspect(db.engine).get_columns("user")}
     with db.engine.begin() as connection:
         if "email" not in user_columns:
-            connection.exec_driver_sql("ALTER TABLE user ADD COLUMN email VARCHAR(254)")
+            connection.exec_driver_sql("ALTER TABLE "user" ADD COLUMN email VARCHAR(254)")
         if "email_verified" not in user_columns:
-            connection.exec_driver_sql("ALTER TABLE user ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE")
-        connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_verified_email ON user(email)")
+            connection.exec_driver_sql("ALTER TABLE "user" ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE")
+        connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_verified_email ON "user"(email)")
 
     # Add the roster type to existing deployments without losing saved dates.
     roster_columns = {column["name"] for column in inspect(db.engine).get_columns("roster")}
