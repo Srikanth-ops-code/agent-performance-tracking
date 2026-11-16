@@ -82,14 +82,14 @@
   <div class="gmail-verify-modal">
     <div class="brand-mark large">✉</div>
     <span class="eyebrow">ACCOUNT SECURITY</span>
-    <h2>Verify your Gmail account</h2>
-    <p class="muted">Link your Gmail address to your agent account. You’ll use this verified address if you ever need to reset your password.</p>
+    <h2>Verify your company email</h2>
+    <p class="muted">Link your company email address to your agent account. You’ll use this verified address if you ever need to reset your password.</p>
     {% if session.get('pending_agent_email') %}
       <p><strong>Verification code sent to {{ session.get('pending_agent_email') }}.</strong></p>
       <form method="post" action="{{ url_for('agent_email_verification') }}" class="stack-form">
         <input type="hidden" name="action" value="verify">
         <label>6-digit verification code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus></label>
-        <button class="button full">Verify Gmail</button>
+        <button class="button full">Verify email</button>
       </form>
       <form method="post" action="{{ url_for('agent_email_verification') }}" class="stack-form" style="margin-top:10px">
         <input type="hidden" name="action" value="send">
@@ -99,7 +99,7 @@
     {% else %}
       <form method="post" action="{{ url_for('agent_email_verification') }}" class="stack-form">
         <input type="hidden" name="action" value="send">
-        <label>Gmail address<input type="email" name="email" placeholder="yourname@gmail.com" autocomplete="email" required></label>
+        <label>Company email address<input type="email" name="email" placeholder="yourname@company.com" autocomplete="email" required></label>
         <button class="button full">Send verification code</button>
       </form>
     {% endif %}
