@@ -356,20 +356,18 @@ def agent_email_verification():
     if action == "send":
         email = request.form.get("email", "").strip().lower()
         if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email):
-            flash("Enter a valid Gmail address.", "danger")
-        elif not email.endswith("@gmail.com"):
-            flash("Please use a Gmail address ending in @gmail.com.", "danger")
+            flash("Enter a valid company email address.", "danger")
         else:
             owner = User.query.filter(User.email == email, User.id != current_user.id).first()
             if owner:
-                flash("That Gmail address is already linked to another account.", "danger")
+                flash("That email address is already linked to another account.", "danger")
             else:
                 try:
                     issue_email_code(current_user, email, "link_email")
                     session["pending_agent_email"] = email
-                    flash("Verification code sent. Enter it below to finish linking your Gmail.", "success")
+                    flash("Verification code sent. Enter it below to verify your company email.", "success")
                 except Exception:
-                    app.logger.exception("Could not send Gmail verification")
+                    app.logger.exception("Could not send company email verification")
                     flash("Email could not be sent. Please contact your administrator.", "danger")
     elif action == "verify":
         email = session.get("pending_agent_email")
