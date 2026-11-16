@@ -2,12 +2,16 @@ import os
 import csv
 import re
 import calendar as cal
-from datetime import date, datetime
+import secrets
+import hashlib
+import smtplib
+from email.message import EmailMessage
+from datetime import date, datetime, timedelta
 from functools import wraps
 from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -54,6 +58,8 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(10), nullable=False)  # admin, tl, agent
     tl_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     active = db.Column(db.Boolean, default=True, nullable=False)
+    email = db.Column(db.String(254), unique=True, nullable=True)
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
 
     team_lead = db.relationship("User", remote_side=[id], backref="team_members", uselist=False)
 
@@ -62,6 +68,17 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class EmailVerificationCode(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    purpose = db.Column(db.String(30), nullable=False)
+    code_hash = db.Column(db.String(64), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 class DailyEntry(db.Model):
@@ -265,6 +282,46 @@ def agent_kpis(agent_id, start, end):
 
 
 # -------------------------------- AUTH --------------------------------------
+def send_verification_email(email, code, purpose):
+    mail_user = os.environ.get("MAIL_USERNAME")
+    mail_password = os.environ.get("MAIL_PASSWORD")
+    if not mail_user or not mail_password:
+        raise RuntimeError("Email sending is not configured. Set MAIL_USERNAME and MAIL_PASSWORD.")
+    message = EmailMessage()
+    message["Subject"] = "Your Daily Tracker verification code"
+    message["From"] = os.environ.get("MAIL_DEFAULT_SENDER", mail_user)
+    message["To"] = email
+    action = "verify your Gmail address" if purpose == "link_email" else "reset your Daily Tracker password"
+    message.set_content(
+        f"Hello,\n\nYour code to {action} is: {code}\n\n"
+        "This code expires in 10 minutes. Do not share it with anyone.\n\nDaily Performance Tracker"
+    )
+    server = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+    port = int(os.environ.get("MAIL_PORT", "587"))
+    with smtplib.SMTP(server, port, timeout=20) as smtp:
+        smtp.starttls()
+        smtp.login(mail_user, mail_password)
+        smtp.send_message(message)
+
+
+def issue_email_code(user, email, purpose):
+    EmailVerificationCode.query.filter_by(user_id=user.id, purpose=purpose).delete()
+    code = f"{secrets.randbelow(1000000):06d}"
+    record = EmailVerificationCode(
+        user_id=user.id, email=email, purpose=purpose,
+        code_hash=hashlib.sha256(code.encode()).hexdigest(),
+        expires_at=datetime.utcnow() + timedelta(minutes=10), attempts=0
+    )
+    db.session.add(record)
+    db.session.commit()
+    try:
+        send_verification_email(email, code, purpose)
+    except Exception:
+        db.session.delete(record)
+        db.session.commit()
+        raise
+
+
 @app.route("/")
 def home():
     if not current_user.is_authenticated:
@@ -289,6 +346,103 @@ def login():
             return redirect(url_for("home"))
         flash("Incorrect username or password.", "danger")
     return render_template("login.html")
+
+
+@app.route("/agent/email-verification", methods=["POST"])
+@login_required
+@role_required("agent")
+def agent_email_verification():
+    action = request.form.get("action")
+    if action == "send":
+        email = request.form.get("email", "").strip().lower()
+        if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", email):
+            flash("Enter a valid Gmail address.", "danger")
+        elif not email.endswith("@gmail.com"):
+            flash("Please use a Gmail address ending in @gmail.com.", "danger")
+        else:
+            owner = User.query.filter(User.email == email, User.id != current_user.id).first()
+            if owner:
+                flash("That Gmail address is already linked to another account.", "danger")
+            else:
+                try:
+                    issue_email_code(current_user, email, "link_email")
+                    session["pending_agent_email"] = email
+                    flash("Verification code sent. Enter it below to finish linking your Gmail.", "success")
+                except Exception:
+                    app.logger.exception("Could not send Gmail verification")
+                    flash("Email could not be sent. Please contact your administrator.", "danger")
+    elif action == "verify":
+        email = session.get("pending_agent_email")
+        code = request.form.get("code", "").strip()
+        record = EmailVerificationCode.query.filter_by(
+            user_id=current_user.id, purpose="link_email", email=email
+        ).order_by(EmailVerificationCode.created_at.desc()).first() if email else None
+        if not record or record.expires_at < datetime.utcnow() or record.attempts >= 5:
+            flash("The code has expired. Request a new code.", "danger")
+        else:
+            record.attempts += 1
+            expected = record.code_hash
+            actual = hashlib.sha256(code.encode()).hexdigest()
+            if secrets.compare_digest(expected, actual):
+                current_user.email = email
+                current_user.email_verified = True
+                db.session.delete(record)
+                db.session.commit()
+                session.pop("pending_agent_email", None)
+                flash("Gmail verified successfully. You can now use Forgot Password.", "success")
+            else:
+                db.session.commit()
+                flash("Incorrect verification code. Please try again.", "danger")
+    return redirect(url_for("home"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        session.pop("password_reset_user_id", None)
+        user = User.query.filter_by(email=email, email_verified=True, role="agent", active=True).first()
+        if user:
+            try:
+                issue_email_code(user, email, "reset_password")
+                session["password_reset_user_id"] = user.id
+                session["password_reset_email"] = email
+            except Exception:
+                app.logger.exception("Could not send password reset email")
+        flash("If an active agent account has this verified Gmail address, a reset code has been sent.", "success")
+        return redirect(url_for("reset_password"))
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    user_id = session.get("password_reset_user_id")
+    email = session.get("password_reset_email")
+    if request.method == "POST":
+        user = db.session.get(User, user_id) if user_id else None
+        code = request.form.get("code", "").strip()
+        password = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        record = EmailVerificationCode.query.filter_by(
+            user_id=user_id, email=email, purpose="reset_password"
+        ).order_by(EmailVerificationCode.created_at.desc()).first() if user_id else None
+        if not user or not record or record.expires_at < datetime.utcnow() or record.attempts >= 5:
+            flash("The reset code is invalid or expired. Please start again.", "danger")
+        elif len(password) < 8 or password != confirm:
+            flash("Passwords must match and contain at least 8 characters.", "danger")
+        else:
+            record.attempts += 1
+            if secrets.compare_digest(record.code_hash, hashlib.sha256(code.encode()).hexdigest()):
+                user.set_password(password)
+                db.session.delete(record)
+                db.session.commit()
+                session.pop("password_reset_user_id", None)
+                session.pop("password_reset_email", None)
+                flash("Password reset successfully. Please sign in.", "success")
+                return redirect(url_for("login"))
+            db.session.commit()
+            flash("Incorrect verification code.", "danger")
+    return render_template("reset_password.html", reset_email=email)
 
 
 @app.route("/logout", methods=["POST"])
@@ -1123,6 +1277,13 @@ def inject_now_label():
 # ------------------------------- STARTUP -----------------------------------
 def initialize_database():
     db.create_all()
+
+    user_columns = {column["name"] for column in inspect(db.engine).get_columns("user")}
+    with db.engine.begin() as connection:
+        if "email" not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE user ADD COLUMN email VARCHAR(254)")
+        if "email_verified" not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE user ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE")
 
     # Add the roster type to existing deployments without losing saved dates.
     roster_columns = {column["name"] for column in inspect(db.engine).get_columns("roster")}
