@@ -69,6 +69,16 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
+class EmailOTP(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    email = db.Column(db.String(254), nullable=False)
+    purpose = db.Column(db.String(30), nullable=False)
+    code_hash = db.Column(db.String(64), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
 
 class DailyEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -282,6 +292,64 @@ def home():
     return redirect(url_for("agent_dashboard"))
 
 
+
+def send_otp_email(recipient, code, purpose):
+    username = os.environ.get("MAIL_USERNAME", "").strip()
+    password = os.environ.get("MAIL_PASSWORD", "").strip()
+    if not username or not password:
+        raise RuntimeError("Email delivery is not configured. Please contact the administrator.")
+    purpose_text = "verify your personal email address" if purpose == "email_verification" else "reset your Daily Tracker password"
+    message = EmailMessage()
+    message["Subject"] = "Your Daily Tracker verification code"
+    message["From"] = os.environ.get("MAIL_DEFAULT_SENDER", username)
+    message["To"] = recipient
+    message.set_content(
+        f"Your OTP to {purpose_text} is: {code}\\n\\n"
+        "This code expires in 10 minutes. Do not share it with anyone. "
+        "If you did not request this code, you can ignore this email."
+    )
+    host = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+    port = int(os.environ.get("MAIL_PORT", "587"))
+    with smtplib.SMTP(host, port, timeout=20) as server:
+        server.starttls()
+        server.login(username, password)
+        server.send_message(message)
+
+
+def create_and_send_otp(user, email, purpose):
+    EmailOTP.query.filter_by(user_id=user.id, purpose=purpose).delete()
+    code = f"{secrets.randbelow(1000000):06d}"
+    otp = EmailOTP(
+        user_id=user.id, email=email, purpose=purpose,
+        code_hash=hashlib.sha256(code.encode("utf-8")).hexdigest(),
+        expires_at=datetime.utcnow() + timedelta(minutes=10), attempts=0
+    )
+    db.session.add(otp)
+    db.session.commit()
+    try:
+        send_otp_email(email, code, purpose)
+    except Exception:
+        db.session.delete(otp)
+        db.session.commit()
+        raise
+
+
+def check_otp(user_id, purpose, submitted_code):
+    otp = EmailOTP.query.filter_by(user_id=user_id, purpose=purpose).order_by(EmailOTP.created_at.desc()).first()
+    if not otp or otp.expires_at < datetime.utcnow() or otp.attempts >= 5:
+        if otp:
+            db.session.delete(otp)
+            db.session.commit()
+        return None
+    otp.attempts += 1
+    expected = hashlib.sha256(submitted_code.strip().encode("utf-8")).hexdigest()
+    if secrets.compare_digest(otp.code_hash, expected):
+        db.session.commit()
+        return otp
+    db.session.commit()
+    return None
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
@@ -297,23 +365,98 @@ def login():
     return render_template("login.html")
 
 
-@app.route("/agent/company-email", methods=["POST"])
+@app.route("/agent/personal-email", methods=["POST"])
 @login_required
 @role_required("agent")
-def agent_company_email():
+def agent_personal_email():
     email = request.form.get("email", "").strip().lower()
-    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email):
-        flash("Enter a valid company email address.", "danger")
-    else:
-        owner = User.query.filter(User.email == email, User.id != current_user.id).first()
-        if owner:
-            flash("That email address is already linked to another account.", "danger")
-        else:
-            current_user.email = email
-            current_user.email_verified = True
-            db.session.commit()
-            flash("Company email saved to your agent profile.", "success")
+    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", email):
+        flash("Enter a valid personal email address.", "danger")
+        return redirect(url_for("home"))
+    owner = User.query.filter(User.email == email, User.id != current_user.id).first()
+    if owner:
+        flash("That email address is already linked to another account.", "danger")
+        return redirect(url_for("home"))
+    try:
+        create_and_send_otp(current_user, email, "email_verification")
+        session["email_otp_pending"] = True
+        flash("A verification OTP has been sent to your personal email.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception("Could not send personal-email verification OTP")
+        flash(str(exc) if isinstance(exc, RuntimeError) else "Could not send the OTP. Please check the email configuration and try again.", "danger")
     return redirect(url_for("home"))
+
+
+@app.route("/agent/verify-personal-email", methods=["POST"])
+@login_required
+@role_required("agent")
+def verify_personal_email():
+    otp = check_otp(current_user.id, "email_verification", request.form.get("otp", "").strip())
+    if not otp:
+        flash("The OTP is invalid, expired, or has reached its attempt limit. Request a new OTP.", "danger")
+        return redirect(url_for("home"))
+    owner = User.query.filter(User.email == otp.email, User.id != current_user.id).first()
+    if owner:
+        db.session.delete(otp)
+        db.session.commit()
+        flash("That email address is already linked to another account.", "danger")
+    else:
+        current_user.email = otp.email
+        current_user.email_verified = True
+        db.session.delete(otp)
+        db.session.commit()
+        session.pop("email_otp_pending", None)
+        flash("Your personal email has been verified and linked to your agent profile.", "success")
+    return redirect(url_for("home"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        user = User.query.filter_by(username=username, active=True).first()
+        if user and user.email and user.email_verified:
+            try:
+                create_and_send_otp(user, user.email, "password_reset")
+                session["password_reset_user_id"] = user.id
+                flash("A password-reset OTP has been sent to your verified personal email.", "success")
+                return redirect(url_for("reset_password"))
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.exception("Could not send password-reset OTP")
+                flash(str(exc) if isinstance(exc, RuntimeError) else "Could not send the OTP. Please try again later.", "danger")
+        else:
+            flash("This account does not have a verified personal email. Please contact your administrator.", "warning")
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    user_id = session.get("password_reset_user_id")
+    user = db.session.get(User, user_id) if user_id else None
+    if not user:
+        flash("Start the password-reset process again.", "warning")
+        return redirect(url_for("forgot_password"))
+    if request.method == "POST":
+        code = request.form.get("otp", "").strip()
+        new_password = request.form.get("new_password", "")
+        if len(new_password) < 8:
+            flash("Password must contain at least 8 characters.", "danger")
+        else:
+            otp = check_otp(user.id, "password_reset", code)
+            if not otp or otp.email != user.email or not user.email_verified:
+                flash("The OTP is invalid, expired, or has reached its attempt limit. Request a new OTP.", "danger")
+            else:
+                user.set_password(new_password)
+                db.session.delete(otp)
+                db.session.commit()
+                session.pop("password_reset_user_id", None)
+                flash("Your password has been reset. You can now sign in.", "success")
+                return redirect(url_for("login"))
+    return render_template("reset_password.html")
 
 
 @app.route("/logout", methods=["POST"])
