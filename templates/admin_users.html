@@ -33,7 +33,7 @@
   {% for u in users %}<tr>
     <td><strong>{{ u.full_name }}</strong></td><td>{{ u.username }}</td>
     <td><span class="role-pill {{ u.role }}">{{ u.role|upper }}</span></td>
-    <td>{{ u.email if u.role == 'agent' and u.email else '—' }}</td>
+    <td>{{ u.email if u.role == 'agent' and u.email_is_personal and u.email_verified else '—' }}</td>
     <td>{{ u.team_lead.full_name if u.role == 'agent' and u.team_lead else '—' }}</td>
     <td><span class="status {{ 'active' if u.active else 'inactive' }}">{{ 'Active' if u.active else 'Inactive' }}</span></td>
     <td>
