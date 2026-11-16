@@ -291,7 +291,7 @@ def send_verification_email(email, code, purpose):
     message["Subject"] = "Your Daily Tracker verification code"
     message["From"] = os.environ.get("MAIL_DEFAULT_SENDER", mail_user)
     message["To"] = email
-    action = "verify your Gmail address" if purpose == "link_email" else "reset your Daily Tracker password"
+    action = "verify your company email address" if purpose == "link_email" else "reset your Daily Tracker password"
     message.set_content(
         f"Hello,\n\nYour code to {action} is: {code}\n\n"
         "This code expires in 10 minutes. Do not share it with anyone.\n\nDaily Performance Tracker"
@@ -387,7 +387,7 @@ def agent_email_verification():
                 db.session.delete(record)
                 db.session.commit()
                 session.pop("pending_agent_email", None)
-                flash("Gmail verified successfully. You can now use Forgot Password.", "success")
+                flash("Company email verified successfully. You can now use Forgot Password.", "success")
             else:
                 db.session.commit()
                 flash("Incorrect verification code. Please try again.", "danger")
@@ -407,7 +407,7 @@ def forgot_password():
                 session["password_reset_email"] = email
             except Exception:
                 app.logger.exception("Could not send password reset email")
-        flash("If an active agent account has this verified Gmail address, a reset code has been sent.", "success")
+        flash("If an active agent account has this verified email address, a reset code has been sent.", "success")
         return redirect(url_for("reset_password"))
     return render_template("forgot_password.html")
 
@@ -943,7 +943,7 @@ def fetch_sharepoint_file(file_url):
     """Fetch SharePoint files only when the sharing link permits server-side access."""
     parsed = urlparse(file_url)
     host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or not (host.endswith("sharepoint.com") or host.endswith("1drv.ms")):
+    if parsed.scheme != "https" or not (host == "sharepoint.com" or host.endswith(".sharepoint.com") or host == "1drv.ms" or host.endswith(".1drv.ms")):
         raise ValueError("Enter a valid HTTPS SharePoint sharing link.")
     download_url = file_url
     separator = "&" if "?" in download_url else "?"
