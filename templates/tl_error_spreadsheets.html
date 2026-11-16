@@ -3,21 +3,38 @@
 {% block heading %}Error Management Database{% endblock %}
 {% block content %}
 <div class="intro-row">
-  <p class="muted">Import your team's error records using a normal file upload or an Excel spreadsheet downloaded from your company's SharePoint. Imported records are saved in the application database and shown only to the matching agents.</p>
+  <p class="muted">Import your team's error records from a file on your device or by using a Google Sheets / company SharePoint spreadsheet link. Imported records are saved in the application database and shown only to the matching agents.</p>
   <a class="text-button" href="{{ url_for('tl_team') }}">← Back to team</a>
 </div>
 <div class="panel narrow">
   <div class="panel-head"><div><span class="eyebrow">IMPORT TEAM ERRORS</span><h2>{% if editing %}Update monthly error data{% else %}Import monthly error data{% endif %}</h2></div></div>
-  <form method="post" enctype="multipart/form-data" action="{% if editing %}{{ url_for('edit_error_spreadsheet', spreadsheet_id=editing.id) }}{% else %}{{ url_for('tl_error_spreadsheets') }}{% endif %}" class="form-grid">
+  <form method="post" enctype="multipart/form-data" action="{% if editing %}{{ url_for('edit_error_spreadsheet', spreadsheet_id=editing.id) }}{% else %}{{ url_for('tl_error_spreadsheets') }}{% endif %}" class="form-grid" id="error-import-form">
     <label>Database entry month<input type="month" name="month" value="{{ editing.month if editing else '' }}" required></label>
-    <div class="span-two"><span class="eyebrow">OPTION 1 · NORMAL FILE UPLOAD</span><label>Select a file from your computer<input type="file" name="spreadsheet_file" accept=".xlsx,.xls,.xlsm,.csv,.docx"></label></div>
-    <div class="span-two"><span class="eyebrow">OPTION 2 · COMPANY SHAREPOINT</span><p class="muted">Download the company SharePoint spreadsheet to your computer, then select it using the upload field above. The application will import it using the same column checks.</p></div>
+    <div class="span-two">
+      <label>Choose import method
+        <select name="import_method" id="import-method">
+          <option value="device" {% if not editing or not editing.spreadsheet_url %}selected{% endif %}>Upload file from device</option>
+          <option value="link" {% if editing and editing.spreadsheet_url %}selected{% endif %}>Import using spreadsheet link</option>
+        </select>
+      </label>
+    </div>
+    <div class="span-two" id="device-upload">
+      <span class="eyebrow">UPLOAD FROM DEVICE</span>
+      <label>Select Excel / CSV / DOCX file<input type="file" name="spreadsheet_file" id="spreadsheet-file" accept=".xlsx,.xls,.xlsm,.csv,.docx"></label>
+    </div>
+    <div class="span-two" id="spreadsheet-link" hidden>
+      <span class="eyebrow">SPREADSHEET LINK</span>
+      <label>Paste Google Sheets or company SharePoint link
+        <input type="url" name="spreadsheet_url" id="spreadsheet-url" value="{{ editing.spreadsheet_url if editing else '' }}" placeholder="https://company.sharepoint.com/... or https://docs.google.com/spreadsheets/..." maxlength="2000">
+      </label>
+      <p class="muted">Google Sheets must be shared as Anyone with the link – Viewer. SharePoint links must allow the application to download the file. Private company files that require Microsoft 365 sign-in need a separate Microsoft sign-in integration.</p>
+    </div>
     <div class="span-two actions">
       <button class="button">{% if editing %}Import and update records{% else %}Import spreadsheet{% endif %}</button>
       {% if editing %}<a class="button button-secondary" href="{{ url_for('tl_error_spreadsheets') }}">Cancel</a>{% endif %}
     </div>
   </form>
-  <p class="hint">Use one source per month. For company SharePoint, download the spreadsheet first and upload the downloaded file here; private SharePoint links are not connected directly yet. Supported formats: .xlsx, .xls, .xlsm, .csv, and .docx (DOCX must contain a table). Required columns: Date, Emp ID, Agent Name, UUID, error_category. Other columns are ignored. The Date values must belong to the selected month.</p>
+  <p class="hint">Use one source per month. Supported file formats: .xlsx, .xls, .xlsm, .csv, and .docx (DOCX must contain a table). Required columns: Date, Emp ID, Agent Name, UUID, error_category. Other columns are ignored. Date values must belong to the selected month.</p>
 </div>
 <div class="panel">
   <div class="panel-head"><div><span class="eyebrow">IMPORTED DATABASE</span><h2>Monthly error imports</h2></div></div>
@@ -25,7 +42,7 @@
   {% for item in spreadsheets %}
     <tr>
       <td><strong>{{ item.month }}</strong></td>
-      <td>{% if item.spreadsheet_url %}<a class="text-button" href="{{ item.spreadsheet_url }}" target="_blank" rel="noopener noreferrer">Imported spreadsheet ↗</a>{% else %}{{ item.source_name or 'Uploaded file' }}{% endif %}</td>
+      <td>{% if item.spreadsheet_url %}<a class="text-button" href="{{ item.spreadsheet_url }}" target="_blank" rel="noopener noreferrer">{{ item.source_name or 'Imported spreadsheet' }} ↗</a>{% else %}{{ item.source_name or 'Uploaded file' }}{% endif %}</td>
       <td>{{ item.errors|length }}</td>
       <td><div class="actions">
         <a class="button button-secondary" href="{{ url_for('tl_error_spreadsheets', edit=item.id) }}">Replace / Edit</a>
@@ -37,4 +54,24 @@
   {% else %}<tr><td colspan="4" class="empty">No error data has been imported yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const method = document.getElementById('import-method');
+  const device = document.getElementById('device-upload');
+  const link = document.getElementById('spreadsheet-link');
+  const file = document.getElementById('spreadsheet-file');
+  const url = document.getElementById('spreadsheet-url');
+  function updateImportMethod() {
+    const useLink = method.value === 'link';
+    device.hidden = useLink;
+    link.hidden = !useLink;
+    file.required = !useLink;
+    url.required = useLink;
+  }
+  method.addEventListener('change', updateImportMethod);
+  updateImportMethod();
+})();
+</script>
 {% endblock %}
