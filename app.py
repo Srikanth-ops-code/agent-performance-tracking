@@ -302,7 +302,7 @@ def login():
 @role_required("agent")
 def agent_company_email():
     email = request.form.get("email", "").strip().lower()
-    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", email):
+    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email):
         flash("Enter a valid company email address.", "danger")
     else:
         owner = User.query.filter(User.email == email, User.id != current_user.id).first()
