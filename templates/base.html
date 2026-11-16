@@ -77,7 +77,7 @@
     </section>
   </main>
 </div>
-{% if current_user.is_authenticated and current_user.role == 'agent' and not current_user.email %}
+{% if current_user.is_authenticated and current_user.role == 'agent' and not current_user.email_is_personal %}
 <div class="gmail-verify-overlay">
   <div class="gmail-verify-modal">
     <div class="brand-mark large">✉</div>
@@ -94,8 +94,8 @@
         <button class="button button-secondary full">Send a new OTP</button>
       </form>
     {% else %}
-      <h2>Add your personal email</h2>
-      <p class="muted">Use an email address you can access. We will send an OTP to verify it. This address will be visible to the administrator and used for password recovery.</p>
+      <h2>Add or update your personal email</h2>
+      <p class="muted">Use your personal Gmail or other personal email. We will send an OTP to verify it. This address will be visible to the administrator and used for password recovery.</p>
       <form method="post" action="{{ url_for('agent_personal_email') }}" class="stack-form">
         <label>Personal email address<input type="email" name="email" placeholder="yourname@gmail.com" autocomplete="email" required></label>
         <button class="button full">Send verification OTP</button>
