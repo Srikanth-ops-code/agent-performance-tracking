@@ -939,6 +939,36 @@ def fetch_google_sheet(sheet_url):
     return content
 
 
+def fetch_sharepoint_file(file_url):
+    """Fetch SharePoint files only when the sharing link permits server-side access."""
+    parsed = urlparse(file_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not (host.endswith("sharepoint.com") or host.endswith("1drv.ms")):
+        raise ValueError("Enter a valid HTTPS SharePoint sharing link.")
+    download_url = file_url
+    separator = "&" if "?" in download_url else "?"
+    if "download=" not in download_url.lower():
+        download_url += separator + "download=1"
+    req = Request(download_url, headers={"User-Agent": "Mozilla/5.0", "Accept": "*/*"})
+    try:
+        with urlopen(req, timeout=30) as response:
+            content = response.read(10 * 1024 * 1024 + 1)
+            content_type = response.headers.get("Content-Type", "").lower()
+    except Exception as exc:
+        raise ValueError("SharePoint could not provide this file. Private company files require Microsoft 365 sign-in integration; upload the file from your device or use a permitted sharing link.") from exc
+    if len(content) > 10 * 1024 * 1024:
+        raise ValueError("The SharePoint file is larger than the 10 MB import limit.")
+    if "text/html" in content_type or content.lstrip().lower().startswith((b"<!doctype html", b"<html")):
+        raise ValueError("SharePoint returned a sign-in page. This private file needs Microsoft 365 sign-in integration, or upload it from your device.")
+    if content.startswith(bytes((80, 75, 3, 4))):
+        filename = "sharepoint.xlsx"
+    elif content.startswith(bytes((208, 207, 17, 224))):
+        filename = "sharepoint.xls"
+    else:
+        filename = "sharepoint.csv"
+    return content, filename
+
+
 def import_agent_errors(tl_id, month, parsed_rows, source):
     agents = User.query.filter_by(role="agent", tl_id=tl_id).all()
     agents_by_username = {agent.username.strip().casefold(): agent for agent in agents}
@@ -990,14 +1020,19 @@ def save_error_spreadsheet_import(tl_id, month, uploaded_file=None, spreadsheet_
         source_url = ""
         source_name = filename
     elif spreadsheet_url:
-        if len(spreadsheet_url) > 1000:
-            raise ValueError("The Google Sheets URL is too long.")
-        file_bytes = fetch_google_sheet(spreadsheet_url)
-        parsed_rows = read_error_rows(file_bytes, "sheet.csv", month)
+        if len(spreadsheet_url) > 2000:
+            raise ValueError("The spreadsheet link is too long.")
+        if "docs.google.com/spreadsheets/" in spreadsheet_url:
+            file_bytes = fetch_google_sheet(spreadsheet_url)
+            filename = "sheet.csv"
+            source_name = "Google Sheets"
+        else:
+            file_bytes, filename = fetch_sharepoint_file(spreadsheet_url)
+            source_name = "SharePoint file"
+        parsed_rows = read_error_rows(file_bytes, filename, month)
         source_url = spreadsheet_url
-        source_name = "Google Sheets"
     else:
-        raise ValueError("Choose an Excel/CSV/DOCX file or enter a Google Sheets URL.")
+        raise ValueError("Choose a file from your device or enter a Google Sheets/SharePoint spreadsheet link.")
 
     item = existing or ErrorSpreadsheet.query.filter_by(tl_id=tl_id, month=month).first()
     if item is None:
