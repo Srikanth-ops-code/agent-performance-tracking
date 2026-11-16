@@ -77,33 +77,18 @@
     </section>
   </main>
 </div>
-{% if current_user.is_authenticated and current_user.role == 'agent' and not current_user.email_verified %}
+{% if current_user.is_authenticated and current_user.role == 'agent' and not current_user.email %}
 <div class="gmail-verify-overlay">
   <div class="gmail-verify-modal">
     <div class="brand-mark large">✉</div>
-    <span class="eyebrow">ACCOUNT SECURITY</span>
-    <h2>Verify your company email</h2>
-    <p class="muted">Link your company email address to your agent account. You’ll use this verified address if you ever need to reset your password.</p>
-    {% if session.get('pending_agent_email') %}
-      <p><strong>Verification code sent to {{ session.get('pending_agent_email') }}.</strong></p>
-      <form method="post" action="{{ url_for('agent_email_verification') }}" class="stack-form">
-        <input type="hidden" name="action" value="verify">
-        <label>6-digit verification code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus></label>
-        <button class="button full">Verify email</button>
-      </form>
-      <form method="post" action="{{ url_for('agent_email_verification') }}" class="stack-form" style="margin-top:10px">
-        <input type="hidden" name="action" value="send">
-        <input type="hidden" name="email" value="{{ session.get('pending_agent_email') }}">
-        <button class="button button-secondary full">Send a new code</button>
-      </form>
-    {% else %}
-      <form method="post" action="{{ url_for('agent_email_verification') }}" class="stack-form">
-        <input type="hidden" name="action" value="send">
-        <label>Company email address<input type="email" name="email" placeholder="yourname@company.com" autocomplete="email" required></label>
-        <button class="button full">Send verification code</button>
-      </form>
-    {% endif %}
-    <small class="muted">This reminder will disappear permanently after successful verification.</small>
+    <span class="eyebrow">AGENT PROFILE</span>
+    <h2>Add your company email</h2>
+    <p class="muted">Enter your company email address. It will be saved directly to your agent profile and visible to the administrator.</p>
+    <form method="post" action="{{ url_for('agent_company_email') }}" class="stack-form">
+      <label>Company email address<input type="email" name="email" placeholder="yourname@company.com" autocomplete="email" required></label>
+      <button class="button full">Save company email</button>
+    </form>
+    <small class="muted">No verification code or OTP is required.</small>
   </div>
 </div>
 <style>
