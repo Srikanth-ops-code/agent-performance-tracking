@@ -29,10 +29,11 @@
 </div>
 <div class="panel">
   <div class="panel-head"><div><span class="eyebrow">USER DIRECTORY & ADMIN CONTROL</span><h2>Accounts <span class="count">{{ users|length }}</span></h2></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Team Lead</th><th>Status</th><th>Account controls</th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Company email</th><th>Team Lead</th><th>Status</th><th>Account controls</th></tr></thead><tbody>
   {% for u in users %}<tr>
     <td><strong>{{ u.full_name }}</strong></td><td>{{ u.username }}</td>
     <td><span class="role-pill {{ u.role }}">{{ u.role|upper }}</span></td>
+    <td>{{ u.email if u.role == 'agent' and u.email else '—' }}</td>
     <td>{{ u.team_lead.full_name if u.role == 'agent' and u.team_lead else '—' }}</td>
     <td><span class="status {{ 'active' if u.active else 'inactive' }}">{{ 'Active' if u.active else 'Inactive' }}</span></td>
     <td>
