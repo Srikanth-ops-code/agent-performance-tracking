@@ -355,7 +355,7 @@ def agent_email_verification():
     action = request.form.get("action")
     if action == "send":
         email = request.form.get("email", "").strip().lower()
-        if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", email):
+        if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email):
             flash("Enter a valid Gmail address.", "danger")
         elif not email.endswith("@gmail.com"):
             flash("Please use a Gmail address ending in @gmail.com.", "danger")
